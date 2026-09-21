@@ -33,14 +33,15 @@ class Character:
     dir = 0
     walk_frame = 0
     moving = False
+    moving_dir = 0
 
     # the points to traverse
     path = [maze.points[1][1]]
     queue = []
     queue_curr = 0
 
-    # 0 - dummy AI
-    # 1 - UCS
+    # 2 - A* (rival)
+    # 5 - player
     ai_type = 0
 
     def __init__(self, point, name, ai_type):
@@ -52,6 +53,7 @@ class Character:
         self.last_target_point = point
         self.walk_frame = 0
         self.moving = False
+        self.moving_dir = -1
         for i in range(12):
             sprite = pygame.image.load(f"{ROOT}/assets/{name}/{name}_{i}.png")
             self.sprites.append(sprite)
@@ -160,6 +162,22 @@ class Character:
                     if hasattr(self, "target_point"):
                         self.ucs_path(self.target_point)
                         self.path.reverse()
+                case 5:
+                    path_pos = self.path[0].pos
+                    point = maze.Point((path_pos.x, path_pos.y), False)
+                    if self.moving_dir != -1:
+                        self.dir = self.moving_dir
+                    match self.moving_dir:
+                        case 0:
+                            point = maze.Point((path_pos.x, path_pos.y + 1), False)
+                        case 1:
+                            point = maze.Point((path_pos.x, path_pos.y - 1), False)
+                        case 2:
+                            point = maze.Point((path_pos.x - 1, path_pos.y), False)
+                        case 3:
+                            point = maze.Point((path_pos.x + 1, path_pos.y), False)
+                    if not maze.points[int(point.pos.y)][int(point.pos.x)].wall:
+                        self.path = [point]
 
     # from GPT 5.6 (using main.py and maze.py as context)
     def astar_explore(self, start):
@@ -522,7 +540,9 @@ class Character:
 
 # initialize characters
 characters = []
+characters.append(Character(maze.points[5][6], "player", 5))
 characters.append(Character(maze.points[5][6], "rival", 2))
+
 
 def draw_points(screen):
     for y in range(len(maze.points)):
@@ -549,7 +569,28 @@ async def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.KEYDOWN:
+                # register arrow keys as player movement
+                if event.key == pygame.K_UP:
+                    characters[0].moving_dir = 1
+                elif event.key == pygame.K_DOWN:
+                    characters[0].moving_dir = 0
+                elif event.key == pygame.K_LEFT:
+                    characters[0].moving_dir = 2
+                elif event.key == pygame.K_RIGHT:
+                    characters[0].moving_dir = 3
+
             elif event.type == pygame.KEYUP:
+                # player will stop moving upon reaching its target
+                if event.key == pygame.K_UP:
+                    characters[0].moving_dir = -1
+                elif event.key == pygame.K_DOWN:
+                    characters[0].moving_dir = -1
+                elif event.key == pygame.K_LEFT:
+                    characters[0].moving_dir = -1
+                elif event.key == pygame.K_RIGHT:
+                    characters[0].moving_dir = -1
+
                 if event.key == pygame.K_1:
                     active_ghost = 0
                 if event.key == pygame.K_2:
@@ -581,6 +622,8 @@ async def main():
         screen.blit(final_img, maze.rect)
 
         # draw_points(screen)
+        characters[1].ai()
+        characters[1].draw(screen)
         characters[0].ai()
         characters[0].draw(screen)
 
