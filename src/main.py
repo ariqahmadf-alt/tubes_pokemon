@@ -4,6 +4,7 @@ import asyncio
 from copy import deepcopy
 import config
 import maze
+import battle
 
 import heapq
 from itertools import count
@@ -18,8 +19,9 @@ def dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
 
-window_size = (720, 800)
+window_size = (775, 600)
 lsat_target_point = {}
+state = "battle"
 
 
 class Character:
@@ -557,6 +559,14 @@ def draw_points(screen):
             pygame.draw.circle(screen, col, pos, 3, 5)
 
 
+def inc_chosen_option(inc):
+    battle.chosen_option += inc
+    if battle.chosen_option > 3:
+        battle.chosen_option = 0
+    elif battle.chosen_option < 0:
+        battle.chosen_option = 3
+
+
 async def main():
     pygame.init()
     screen = pygame.display.set_mode((int(window_size[0]), int(window_size[1])))
@@ -564,6 +574,7 @@ async def main():
     running = True
     maze_og_toggle = True
     active_ghost = 0
+    font = pygame.font.Font("assets/pkmn.ttf", 24)
 
     while running:
         for event in pygame.event.get():
@@ -573,8 +584,10 @@ async def main():
                 # register arrow keys as player movement
                 if event.key == pygame.K_UP:
                     characters[0].moving_dir = 1
+                    inc_chosen_option(-1)
                 elif event.key == pygame.K_DOWN:
                     characters[0].moving_dir = 0
+                    inc_chosen_option(1)
                 elif event.key == pygame.K_LEFT:
                     characters[0].moving_dir = 2
                 elif event.key == pygame.K_RIGHT:
@@ -608,24 +621,32 @@ async def main():
                         0 if config.rival_speed == original_speed else original_speed
                     )
 
-        screen.fill("black")
+        if state == "overworld":
+            screen.fill("black")
+        elif state == "battle":
+            screen.fill("white")
 
-        img_to_use = maze.maze_og_img if maze_og_toggle else maze.img
-        divisor = 16.0 if maze_og_toggle else 1.0
-        final_img = pygame.transform.scale(
-            img_to_use,
-            (
-                img_to_use.get_width() * config.maze_scale / divisor,
-                img_to_use.get_height() * config.maze_scale / divisor,
-            ),
-        )
-        screen.blit(final_img, maze.rect)
+        if state == "overworld":
+            img_to_use = maze.maze_og_img if maze_og_toggle else maze.img
+            divisor = 16.0 if maze_og_toggle else 1.0
+            final_img = pygame.transform.scale(
+                img_to_use,
+                (
+                    img_to_use.get_width() * config.maze_scale / divisor,
+                    img_to_use.get_height() * config.maze_scale / divisor,
+                ),
+            )
+            screen.blit(final_img, maze.rect)
 
-        # draw_points(screen)
-        characters[1].ai()
-        characters[1].draw(screen)
-        characters[0].ai()
-        characters[0].draw(screen)
+            # draw_points(screen)
+            characters[1].ai()
+            characters[1].draw(screen)
+            characters[0].ai()
+            characters[0].draw(screen)
+        elif state == "battle":
+            battle.draw_str(screen, font)
+            battle.draw_pokemon(screen)
+            battle.draw_stats(screen, font)
 
         pygame.display.flip()
         # print(pygame.mouse.get_pos())
