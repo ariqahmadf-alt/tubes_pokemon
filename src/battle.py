@@ -11,6 +11,8 @@ move_logs = []
 chosen_move = 0
 battle_text = ""
 chosen_log = 0
+showing_log = True
+last_rival_turn = 0
 
 # 0 - player chooses move
 # 1 - player uses move
@@ -73,7 +75,7 @@ player = Pokemon(
     "PIKACHU",
     100,
     [
-        Move("ATTACK2", 5, 10),
+        Move("ATTACK", 5, 10),
         Move("DEFEND", 5, 10),
         Move("HEAL", 5, 10),
         Move("REST", -1, -1),  # -1 PP means infinite move
@@ -83,7 +85,7 @@ rival = Pokemon(
     "CHARIZARD",
     100,
     [
-        Move("ATTACK1", 5, 10),
+        Move("ATTACK", 5, 10),
         Move("DEFEND", 5, 10),
         Move("HEAL", 5, 10),
         Move("REST", -1, -1),  # -1 PP means infinite move
@@ -163,7 +165,7 @@ def draw_pokemon(screen):
     scaled = scale_sprite(pikachu, 4, (60, 132))
     screen.blit(scaled[0], scaled[1])
 
-    scaled = scale_sprite(charizard, 4, (410, 0))
+    scaled = scale_sprite(charizard, 4, (410, 10))
     screen.blit(scaled[0], scaled[1])
 
 
@@ -203,3 +205,13 @@ def draw_logs(screen, font):
         if log.user == "CHARIZARD":
             side = text.get_rect(topright=(900 + 40, y + 40))
         screen.blit(text, side)
+
+
+def draw_ai_brain(screen, font):
+    scaled = scale_sprite(vert_box, 8, (900 - 260, -50))
+    screen.blit(scaled[0], scaled[1])
+
+    screen.blit(
+        font.render(f"AI (TURN {last_rival_turn}):", False, "black"),
+        (675, 0),
+    )

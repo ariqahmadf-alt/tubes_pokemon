@@ -4,7 +4,7 @@
 maze_type = 0
 
 # Scale of the maze (and rest of the game).
-maze_scale = 30
+maze_scale = 40
 
 # How fast ghosts move.
 # Can be set to 0 to freeze them.

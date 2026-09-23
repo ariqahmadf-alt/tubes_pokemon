@@ -21,7 +21,7 @@ def dist(p1, p2):
 
 window_size = (950, 600)
 lsat_target_point = {}
-state = "battle"
+state = "overworld"
 
 
 class Character:
@@ -602,6 +602,7 @@ async def main():
                             )
                         )
                         battle.turn_step += 1
+                        battle.last_rival_turn = len(battle.move_logs) + 1
                     elif battle.turn_step == 1:
                         battle.turn_step += 1
 
@@ -622,6 +623,7 @@ async def main():
                         battle.turn_step = 0
                 elif event.key == pygame.K_m:
                     maze_og_toggle = not maze_og_toggle
+                    battle.showing_log = not battle.showing_log
 
             elif event.type == pygame.KEYUP:
                 # player will stop moving upon reaching its target
@@ -663,7 +665,10 @@ async def main():
                 battle.draw_moves(screen, font)
             battle.draw_pokemon(screen)
             battle.draw_stats(screen, font)
-            battle.draw_logs(screen, font)
+            if battle.showing_log:
+                battle.draw_logs(screen, font)
+            else:
+                battle.draw_ai_brain(screen, font)
 
         pygame.display.flip()
         # print(pygame.mouse.get_pos())
