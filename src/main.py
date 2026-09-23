@@ -20,8 +20,6 @@ def dist(p1, p2):
 
 
 window_size = (950, 600)
-lsat_target_point = {}
-state = "battle"
 
 
 class Character:
@@ -99,6 +97,10 @@ class Character:
 
         # move to next point if ghost is close to its current
         if dist(point.spos(), self.pos) < 1:
+            # initiate dialog if rival is near player
+            if self.ai_type == 2 and (self.pos - characters[0].pos).magnitude() < 45:
+                battle.battle_text = "I heard you haven't invested in\nOpenAI. Are you one of those\n'pencil-sloppers'?"
+
             # prepare points for ghost AI
             for y in range(len(maze.points)):
                 for x in range(len(maze.points[y])):
@@ -542,7 +544,7 @@ class Character:
 
 # initialize characters
 characters = []
-characters.append(Character(maze.points[5][6], "player", 5))
+characters.append(Character(maze.points[9][7], "player", 5))
 characters.append(Character(maze.points[5][6], "rival", 2))
 
 
@@ -559,6 +561,35 @@ def draw_points(screen):
             pygame.draw.circle(screen, col, pos, 3, 5)
 
 
+def next_step():
+    can_attack = battle.player.moves[battle.chosen_move].pp != 0
+    if battle.turn_step == 0 and can_attack:
+        (battle.battle_text, battle.move_logs) = battle.player.choose_move(
+            battle.chosen_move,
+            battle.battle_text,
+            battle.move_logs,
+            battle.rival,
+        )
+        battle.turn_step += 1
+        battle.last_rival_turn = len(battle.move_logs) + 1
+    elif battle.turn_step == 1:
+        battle.turn_step += 1
+
+        # enemy AI here
+        battle.battle_text = battle.rival.name + " is thinking..."
+
+    elif battle.turn_step == 2:
+        (battle.battle_text, battle.move_logs) = battle.rival.choose_move(
+            0,
+            battle.battle_text,
+            battle.move_logs,
+            battle.player,
+        )
+        battle.turn_step += 1
+    elif battle.turn_step == 3:
+        battle.turn_step = 0
+
+
 async def main():
     pygame.init()
     screen = pygame.display.set_mode((int(window_size[0]), int(window_size[1])))
@@ -567,6 +598,7 @@ async def main():
     maze_og_toggle = True
     active_ghost = 0
     font = pygame.font.Font("assets/pkmn.ttf", 24)
+    state = "overworld"
 
     while running:
         for event in pygame.event.get():
@@ -575,52 +607,34 @@ async def main():
             elif event.type == pygame.KEYDOWN:
                 # register arrow keys as player movement
                 if event.key == pygame.K_UP:
-                    characters[0].moving_dir = 1
-                    battle.chosen_move = battle.inc_chosen_move(-1, battle.chosen_move)
+                    if state == "battle":
+                        battle.chosen_move = battle.inc_chosen_move(
+                            -1, battle.chosen_move
+                        )
+                    elif battle.battle_text == "":
+                        characters[0].moving_dir = 1
                 elif event.key == pygame.K_DOWN:
-                    characters[0].moving_dir = 0
-                    battle.chosen_move = battle.inc_chosen_move(1, battle.chosen_move)
-                elif event.key == pygame.K_LEFT:
+                    if state == "battle":
+                        battle.chosen_move = battle.inc_chosen_move(
+                            1, battle.chosen_move
+                        )
+                    elif battle.battle_text == "":
+                        characters[0].moving_dir = 0
+                elif event.key == pygame.K_LEFT and battle.battle_text == "":
                     characters[0].moving_dir = 2
-                elif event.key == pygame.K_RIGHT:
+                elif event.key == pygame.K_RIGHT and battle.battle_text == "":
                     characters[0].moving_dir = 3
-                elif event.key == pygame.K_s:
+                elif event.key == pygame.K_s and state == "battle":
                     battle.chosen_log = min(
                         battle.chosen_log + 1, len(battle.move_logs) - 1
                     )
-                elif event.key == pygame.K_w:
+                elif event.key == pygame.K_w and state == "battle":
                     battle.chosen_log = max(battle.chosen_log - 1, 0)
                 elif event.key == pygame.K_SPACE:
-                    can_attack = battle.player.moves[battle.chosen_move].pp != 0
-                    if battle.turn_step == 0 and can_attack:
-                        (battle.battle_text, battle.move_logs) = (
-                            battle.player.choose_move(
-                                battle.chosen_move,
-                                battle.battle_text,
-                                battle.move_logs,
-                                battle.rival,
-                            )
-                        )
-                        battle.turn_step += 1
-                        battle.last_rival_turn = len(battle.move_logs) + 1
-                    elif battle.turn_step == 1:
-                        battle.turn_step += 1
-
-                        # enemy AI here
-                        battle.battle_text = battle.rival.name + " is thinking..."
-
-                    elif battle.turn_step == 2:
-                        (battle.battle_text, battle.move_logs) = (
-                            battle.rival.choose_move(
-                                0,
-                                battle.battle_text,
-                                battle.move_logs,
-                                battle.player,
-                            )
-                        )
-                        battle.turn_step += 1
-                    elif battle.turn_step == 3:
-                        battle.turn_step = 0
+                    if state == "battle":
+                        next_step()
+                    elif battle.battle_text != "":
+                        state = "battle"
                 elif event.key == pygame.K_m:
                     maze_og_toggle = not maze_og_toggle
                     battle.showing_log = not battle.showing_log
@@ -658,6 +672,8 @@ async def main():
             characters[1].draw(screen)
             characters[0].ai()
             characters[0].draw(screen)
+            if battle.battle_text != "":
+                battle.draw_battle_text(screen, font)
         elif state == "battle":
             if battle.turn_step != 0:
                 battle.draw_battle_text(screen, font)

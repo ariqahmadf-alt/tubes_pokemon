@@ -54,7 +54,7 @@ class Pokemon:
         move = self.moves[move_idx]
         match move_idx:
             case 0:
-                enemy.hp -= move.value - enemy.defense
+                enemy.hp -= max(move.value - enemy.defense, 0)
             case 1:
                 self.defense += move.value
             case 2:
@@ -65,7 +65,7 @@ class Pokemon:
         # use PP if it's not an infinite move
         if move.pp != -1:
             move.pp -= 1
-        b_text = self.name + " used " + move.name + "!"
+        b_text = self.name + " used " + move.name + "!\n(" + str(move.value) + ")"
         move_entry = MoveLogEntry(move, self.name)
         logs.append(move_entry)
         return (b_text, logs)
