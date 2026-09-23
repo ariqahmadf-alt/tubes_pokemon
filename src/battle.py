@@ -1,26 +1,57 @@
 import pygame
 import config
+from copy import deepcopy
 
 box = pygame.image.load("assets/box.png")
 options = pygame.image.load("assets/options.png")
 pikachu = pygame.image.load("assets/pikachu.png")
 charizard = pygame.image.load("assets/charizard.png")
-logs = []
-chosen_option = 0
+move_logs = []
+chosen_move = 0
+battle_text = ""
 
 
-class Trainer:
-    def __init__(self, name):
-        self.name = name
-        self.moves = ["ATTACK", "DEFEND", "POTION", "RETREAT"]
-
-
-class Move:
-    def __init__(self, name, user, player, enemy):
+class MoveLogEntry:
+    def __init__(self, name, user):
         self.name = name
         self.user = user
-        self.player = player
-        self.enemy = enemy
+        self.player = deepcopy(player)
+        self.rival = deepcopy(rival)
+
+
+class Pokemon:
+    def __init__(self, name, hp):
+        self.name = name
+        self.hp = hp
+        self.defense = 0
+        self.max_hp = hp
+        self.moves = ["ATTACK", "DEFEND", "HEAL", "REST"]
+
+    def choose_move(self, move_idx, b_text, logs, enemy):
+        match move_idx:
+            case 0:
+                enemy.hp -= 30 - enemy.defense
+                b_text = self.name + " attacked!"
+            case 1:
+                self.defense += 10
+                b_text = self.name + " defended!"
+            case 2:
+                self.hp += 10
+                b_text = self.name + " healed!"
+            case 3:
+                b_text = self.name + " rested!"
+        move = MoveLogEntry(self.moves[move_idx], self.name)
+        logs.append(move)
+        return (b_text, logs)
+
+
+player = Pokemon("PIKACHU", 100)
+rival = Pokemon("CHARIZARD", 100)
+
+
+def printLogs():
+    for log in move_logs:
+        print(log.name, log.user)
 
 
 def scale_sprite(sprite, scale, pos):
@@ -37,23 +68,43 @@ def scale_sprite(sprite, scale, pos):
     return (scaled, rect)
 
 
-def draw(screen):
+# cycle thru moves when pressing up/down
+def inc_chosen_move(inc, co):
+    co += inc
+    if co > 3:
+        co = 0
+    elif co < 0:
+        co = 3
+    return co
+
+
+def draw_moves(screen, font):
     sprite = scale_sprite(box, 5, (0, 380))
     screen.blit(sprite[0], sprite[1])
 
+    def chosen(move):
+        if chosen_move == move:
+            return ">"
+        else:
+            return "-"
 
-def chosen(option):
-    if chosen_option == option:
-        return ">"
-    else:
-        return "-"
-
-
-def draw_str(screen, font):
-    draw(screen)
     screen.blit(
         font.render(
-            f"{chosen(0)} ATTACK\n{chosen(1)} DEFEND\n{chosen(2)} POTION\n{chosen(3)} RETREAT",
+            f"{chosen(0)} ATTACK\n{chosen(1)} DEFEND\n{chosen(2)} POTION\n{chosen(3)} ---",
+            False,
+            "black",
+        ),
+        (30, 410),
+    )
+
+
+def draw_battle_text(screen, font):
+    sprite = scale_sprite(box, 5, (0, 380))
+    screen.blit(sprite[0], sprite[1])
+
+    screen.blit(
+        font.render(
+            battle_text,
             False,
             "black",
         ),
@@ -70,7 +121,9 @@ def draw_pokemon(screen):
 
 
 def draw_stats(screen, font):
-    screen.blit(font.render("PIKACHU", False, "black"), (410, 250))
-    screen.blit(font.render("HP: 100/100", False, "black"), (410, 300))
-    screen.blit(font.render("CHARIZARD", False, "black"), (70, 20))
-    screen.blit(font.render("HP: 100/100", False, "black"), (70, 70))
+    screen.blit(font.render(player.name, False, "black"), (410, 250))
+    screen.blit(
+        font.render(f"HP: {player.hp}/{player.max_hp}", False, "black"), (410, 300)
+    )
+    screen.blit(font.render(rival.name, False, "black"), (70, 20))
+    screen.blit(font.render(f"HP: {rival.hp}/{rival.max_hp}", False, "black"), (70, 70))

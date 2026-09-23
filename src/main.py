@@ -559,14 +559,6 @@ def draw_points(screen):
             pygame.draw.circle(screen, col, pos, 3, 5)
 
 
-def inc_chosen_option(inc):
-    battle.chosen_option += inc
-    if battle.chosen_option > 3:
-        battle.chosen_option = 0
-    elif battle.chosen_option < 0:
-        battle.chosen_option = 3
-
-
 async def main():
     pygame.init()
     screen = pygame.display.set_mode((int(window_size[0]), int(window_size[1])))
@@ -584,14 +576,28 @@ async def main():
                 # register arrow keys as player movement
                 if event.key == pygame.K_UP:
                     characters[0].moving_dir = 1
-                    inc_chosen_option(-1)
+                    battle.chosen_move = battle.inc_chosen_move(-1, battle.chosen_move)
                 elif event.key == pygame.K_DOWN:
                     characters[0].moving_dir = 0
-                    inc_chosen_option(1)
+                    battle.chosen_move = battle.inc_chosen_move(1, battle.chosen_move)
                 elif event.key == pygame.K_LEFT:
                     characters[0].moving_dir = 2
                 elif event.key == pygame.K_RIGHT:
                     characters[0].moving_dir = 3
+                elif event.key == pygame.K_SPACE:
+                    if battle.battle_text != "":
+                        battle.battle_text = ""
+                    else:
+                        (battle.battle_text, battle.move_logs) = (
+                            battle.player.choose_move(
+                                battle.chosen_move,
+                                battle.battle_text,
+                                battle.move_logs,
+                                battle.rival,
+                            )
+                        )
+                elif event.key == pygame.K_m:
+                    maze_og_toggle = not maze_og_toggle
 
             elif event.type == pygame.KEYUP:
                 # player will stop moving upon reaching its target
@@ -603,23 +609,6 @@ async def main():
                     characters[0].moving_dir = -1
                 elif event.key == pygame.K_RIGHT:
                     characters[0].moving_dir = -1
-
-                if event.key == pygame.K_1:
-                    active_ghost = 0
-                if event.key == pygame.K_2:
-                    active_ghost = 1
-                if event.key == pygame.K_3:
-                    active_ghost = 2
-                if event.key == pygame.K_4:
-                    active_ghost = 3
-                if event.key == pygame.K_5:
-                    active_ghost = 4
-                if event.key == pygame.K_m:
-                    maze_og_toggle = not maze_og_toggle
-                if event.key == pygame.K_SPACE:
-                    config.rival_speed = (
-                        0 if config.rival_speed == original_speed else original_speed
-                    )
 
         if state == "overworld":
             screen.fill("black")
@@ -644,7 +633,10 @@ async def main():
             characters[0].ai()
             characters[0].draw(screen)
         elif state == "battle":
-            battle.draw_str(screen, font)
+            if battle.battle_text != "":
+                battle.draw_battle_text(screen, font)
+            else:
+                battle.draw_moves(screen, font)
             battle.draw_pokemon(screen)
             battle.draw_stats(screen, font)
 
