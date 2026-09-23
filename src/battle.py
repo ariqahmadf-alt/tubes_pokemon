@@ -41,17 +41,12 @@ class Move:
 
 
 class Pokemon:
-    def __init__(self, name, hp):
+    def __init__(self, name, hp, moves):
         self.name = name
         self.hp = hp
         self.defense = 0
         self.max_hp = hp
-        self.moves = [
-            Move("ATTACK", 5, 10),
-            Move("DEFEND", 5, 10),
-            Move("HEAL", 5, 10),
-            Move("REST", -1, -1),  # -1 PP means infinite move
-        ]
+        self.moves = moves
 
     def choose_move(self, move_idx, b_text, logs, enemy):
         move = self.moves[move_idx]
@@ -74,8 +69,26 @@ class Pokemon:
         return (b_text, logs)
 
 
-player = Pokemon("PIKACHU", 100)
-rival = Pokemon("CHARIZARD", 100)
+player = Pokemon(
+    "PIKACHU",
+    100,
+    [
+        Move("ATTACK2", 5, 10),
+        Move("DEFEND", 5, 10),
+        Move("HEAL", 5, 10),
+        Move("REST", -1, -1),  # -1 PP means infinite move
+    ],
+)
+rival = Pokemon(
+    "CHARIZARD",
+    100,
+    [
+        Move("ATTACK1", 5, 10),
+        Move("DEFEND", 5, 10),
+        Move("HEAL", 5, 10),
+        Move("REST", -1, -1),  # -1 PP means infinite move
+    ],
+)
 
 
 def printLogs():
@@ -167,13 +180,18 @@ def draw_logs(screen, font):
     scaled = scale_sprite(vert_box, 8, (900 - 260, -50))
     screen.blit(scaled[0], scaled[1])
 
+    screen.blit(
+        font.render("MOVE LOG:", False, "black"),
+        (675, 0),
+    )
+
     for i in range(len(move_logs)):
         if i < chosen_log:
             continue
-        y = 30 + ((i - chosen_log) * 90)
+        y = 40 + ((i - chosen_log) * 110)
         log = move_logs[i]
         screen.blit(
-            font.render(f"{i}", False, "black"),
+            font.render(f"{i + 1}", False, "black"),
             (900 - 230, y),
         )
         screen.blit(

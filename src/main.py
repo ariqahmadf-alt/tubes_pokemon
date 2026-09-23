@@ -585,8 +585,8 @@ async def main():
                 elif event.key == pygame.K_RIGHT:
                     characters[0].moving_dir = 3
                 elif event.key == pygame.K_s:
-                    battle.chosen_log = max(
-                        battle.chosen_log + 1, len(battle.move_logs)
+                    battle.chosen_log = min(
+                        battle.chosen_log + 1, len(battle.move_logs) - 1
                     )
                 elif event.key == pygame.K_w:
                     battle.chosen_log = max(battle.chosen_log - 1, 0)
