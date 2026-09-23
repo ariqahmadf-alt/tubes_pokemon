@@ -19,7 +19,7 @@ def dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
 
-window_size = (775, 600)
+window_size = (950, 600)
 lsat_target_point = {}
 state = "battle"
 
@@ -584,6 +584,12 @@ async def main():
                     characters[0].moving_dir = 2
                 elif event.key == pygame.K_RIGHT:
                     characters[0].moving_dir = 3
+                elif event.key == pygame.K_s:
+                    battle.chosen_log = max(
+                        battle.chosen_log + 1, len(battle.move_logs)
+                    )
+                elif event.key == pygame.K_w:
+                    battle.chosen_log = max(battle.chosen_log - 1, 0)
                 elif event.key == pygame.K_SPACE:
                     can_attack = battle.player.moves[battle.chosen_move].pp != 0
                     if battle.turn_step == 0 and can_attack:
@@ -657,6 +663,7 @@ async def main():
                 battle.draw_moves(screen, font)
             battle.draw_pokemon(screen)
             battle.draw_stats(screen, font)
+            battle.draw_logs(screen, font)
 
         pygame.display.flip()
         # print(pygame.mouse.get_pos())

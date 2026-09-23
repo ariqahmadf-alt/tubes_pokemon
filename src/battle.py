@@ -3,12 +3,14 @@ import config
 from copy import deepcopy
 
 box = pygame.image.load("assets/box.png")
+vert_box = pygame.image.load("assets/vert_box.png")
 options = pygame.image.load("assets/options.png")
 pikachu = pygame.image.load("assets/pikachu.png")
 charizard = pygame.image.load("assets/charizard.png")
 move_logs = []
 chosen_move = 0
 battle_text = ""
+chosen_log = 0
 
 # 0 - player chooses move
 # 1 - player uses move
@@ -18,8 +20,8 @@ turn_step = 0
 
 
 class MoveLogEntry:
-    def __init__(self, name, user):
-        self.name = name
+    def __init__(self, move, user):
+        self.move = move
         self.user = user
         self.player = deepcopy(player)
         self.rival = deepcopy(rival)
@@ -81,7 +83,7 @@ def printLogs():
         print(log.name, log.user)
 
 
-def scale_sprite(sprite, scale, pos):
+def scale_sprite(sprite, scale, pos, rot=0):
     scaled = pygame.transform.scale(
         sprite,
         (
@@ -89,6 +91,7 @@ def scale_sprite(sprite, scale, pos):
             sprite.get_height() * scale,
         ),
     )
+    scaled = pygame.transform.rotate(scaled, rot)
     rect = scaled.get_rect()
     rect.x = pos[0]
     rect.y = pos[1]
@@ -152,9 +155,33 @@ def draw_pokemon(screen):
 
 
 def draw_stats(screen, font):
-    screen.blit(font.render(player.name, False, "black"), (410, 250))
+    screen.blit(font.render(player.name, False, "black"), (380, 250))
     screen.blit(
-        font.render(f"HP: {player.hp}/{player.max_hp}", False, "black"), (410, 300)
+        font.render(f"HP: {player.hp}/{player.max_hp}", False, "black"), (380, 300)
     )
     screen.blit(font.render(rival.name, False, "black"), (70, 20))
     screen.blit(font.render(f"HP: {rival.hp}/{rival.max_hp}", False, "black"), (70, 70))
+
+
+def draw_logs(screen, font):
+    scaled = scale_sprite(vert_box, 8, (900 - 260, -50))
+    screen.blit(scaled[0], scaled[1])
+
+    for i in range(len(move_logs)):
+        if i < chosen_log:
+            continue
+        y = 30 + ((i - chosen_log) * 90)
+        log = move_logs[i]
+        screen.blit(
+            font.render(f"{i}", False, "black"),
+            (900 - 230, y),
+        )
+        screen.blit(
+            font.render(f"{log.player.hp}/{log.rival.hp}", False, "black"),
+            (900 - 110, y),
+        )
+        text = font.render(f"{log.move.name}", False, "black")
+        side = text.get_rect(topleft=(900 - 230, y + 40))
+        if log.user == "CHARIZARD":
+            side = text.get_rect(topright=(900 + 40, y + 40))
+        screen.blit(text, side)
