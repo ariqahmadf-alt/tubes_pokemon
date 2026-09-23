@@ -10,6 +10,12 @@ move_logs = []
 chosen_move = 0
 battle_text = ""
 
+# 0 - player chooses move
+# 1 - player uses move
+# 2 - enemy chooses move
+# 3 - enemy uses move
+turn_step = 0
+
 
 class MoveLogEntry:
     def __init__(self, name, user):
@@ -19,29 +25,48 @@ class MoveLogEntry:
         self.rival = deepcopy(rival)
 
 
+class Move:
+    def __init__(self, name, pp, value):
+        self.name = name
+
+        # power points
+        self.pp = pp
+        self.max_pp = pp
+
+        # generic value corresponding to the move.
+        # eg; ATTACK move of 10 will reduce HP by 10
+        self.value = value
+
+
 class Pokemon:
     def __init__(self, name, hp):
         self.name = name
         self.hp = hp
         self.defense = 0
         self.max_hp = hp
-        self.moves = ["ATTACK", "DEFEND", "HEAL", "REST"]
+        self.moves = [
+            Move("ATTACK", 5, 10),
+            Move("DEFEND", 5, 10),
+            Move("HEAL", 5, 10),
+            Move("REST", 5, -1),
+        ]
 
     def choose_move(self, move_idx, b_text, logs, enemy):
+        move = self.moves[move_idx]
         match move_idx:
             case 0:
-                enemy.hp -= 30 - enemy.defense
-                b_text = self.name + " attacked!"
+                enemy.hp -= move.value - enemy.defense
             case 1:
-                self.defense += 10
-                b_text = self.name + " defended!"
+                self.defense += move.value
             case 2:
-                self.hp += 10
-                b_text = self.name + " healed!"
+                self.hp = min(self.hp + move.value, self.max_hp)
             case 3:
-                b_text = self.name + " rested!"
-        move = MoveLogEntry(self.moves[move_idx], self.name)
-        logs.append(move)
+                for move in self.moves:
+                    move.pp = move.max_pp
+        move.pp -= 1
+        b_text = self.name + " used " + move.name + "!"
+        move_entry = MoveLogEntry(move, self.name)
+        logs.append(move_entry)
         return (b_text, logs)
 
 
@@ -83,19 +108,21 @@ def draw_moves(screen, font):
     screen.blit(sprite[0], sprite[1])
 
     def chosen(move):
+        str = ""
         if chosen_move == move:
-            return ">"
+            str = ">"
         else:
-            return "-"
+            str = "-"
+        str += moves[move].name
+        str += f"  ({moves[move].pp}/{moves[move].max_pp})"
+        return str
 
-    screen.blit(
-        font.render(
-            f"{chosen(0)} ATTACK\n{chosen(1)} DEFEND\n{chosen(2)} POTION\n{chosen(3)} ---",
-            False,
-            "black",
-        ),
-        (30, 410),
-    )
+    moves = player.moves
+
+    screen.blit(font.render(chosen(0), False, "black"), (30, 410))
+    screen.blit(font.render(chosen(1), False, "black"), (30, 450))
+    screen.blit(font.render(chosen(2), False, "black"), (30, 490))
+    screen.blit(font.render(chosen(3), False, "black"), (30, 530))
 
 
 def draw_battle_text(screen, font):

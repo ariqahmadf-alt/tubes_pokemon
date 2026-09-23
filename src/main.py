@@ -585,9 +585,8 @@ async def main():
                 elif event.key == pygame.K_RIGHT:
                     characters[0].moving_dir = 3
                 elif event.key == pygame.K_SPACE:
-                    if battle.battle_text != "":
-                        battle.battle_text = ""
-                    else:
+                    can_attack = battle.player.moves[battle.chosen_move].pp > 0
+                    if battle.turn_step == 0 and can_attack:
                         (battle.battle_text, battle.move_logs) = (
                             battle.player.choose_move(
                                 battle.chosen_move,
@@ -596,6 +595,22 @@ async def main():
                                 battle.rival,
                             )
                         )
+                        battle.turn_step += 1
+                    elif battle.turn_step == 1:
+                        battle.turn_step += 1
+                        battle.battle_text = battle.rival.name + " is thinking..."
+                    elif battle.turn_step == 2:
+                        (battle.battle_text, battle.move_logs) = (
+                            battle.rival.choose_move(
+                                0,
+                                battle.battle_text,
+                                battle.move_logs,
+                                battle.player,
+                            )
+                        )
+                        battle.turn_step += 1
+                    elif battle.turn_step == 3:
+                        battle.turn_step = 0
                 elif event.key == pygame.K_m:
                     maze_og_toggle = not maze_og_toggle
 
@@ -633,7 +648,7 @@ async def main():
             characters[0].ai()
             characters[0].draw(screen)
         elif state == "battle":
-            if battle.battle_text != "":
+            if battle.turn_step != 0:
                 battle.draw_battle_text(screen, font)
             else:
                 battle.draw_moves(screen, font)
