@@ -197,8 +197,16 @@ def draw_logs(screen, font):
             (900 - 230, y),
         )
         screen.blit(
-            font.render(f"{log.player.hp}/{log.rival.hp}", False, "black"),
-            (900 - 110, y),
+            font.render(f"{log.player.hp}", False, (0, 205, 0)),
+            (900 - 130, y),
+        )
+        screen.blit(
+            font.render("/", False, "black"),
+            (900 - 50, y),
+        )
+        screen.blit(
+            font.render(f"{log.rival.hp}", False, (205, 0, 0)),
+            (900 - 10, y),
         )
         text = font.render(f"{log.move.name}", False, "black")
         side = text.get_rect(topleft=(900 - 230, y + 40))

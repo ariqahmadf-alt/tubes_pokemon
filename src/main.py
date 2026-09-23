@@ -21,7 +21,7 @@ def dist(p1, p2):
 
 window_size = (950, 600)
 lsat_target_point = {}
-state = "overworld"
+state = "battle"
 
 
 class Character:
