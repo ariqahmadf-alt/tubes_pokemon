@@ -48,7 +48,7 @@ class Pokemon:
             Move("ATTACK", 5, 10),
             Move("DEFEND", 5, 10),
             Move("HEAL", 5, 10),
-            Move("REST", 5, -1),
+            Move("REST", -1, -1),  # -1 PP means infinite move
         ]
 
     def choose_move(self, move_idx, b_text, logs, enemy):
@@ -63,7 +63,9 @@ class Pokemon:
             case 3:
                 for move in self.moves:
                     move.pp = move.max_pp
-        move.pp -= 1
+        # use PP if it's not an infinite move
+        if move.pp != -1:
+            move.pp -= 1
         b_text = self.name + " used " + move.name + "!"
         move_entry = MoveLogEntry(move, self.name)
         logs.append(move_entry)
@@ -114,7 +116,9 @@ def draw_moves(screen, font):
         else:
             str = "-"
         str += moves[move].name
-        str += f"  ({moves[move].pp}/{moves[move].max_pp})"
+        if moves[move].pp != -1:
+            str += f"  ({moves[move].pp}/{moves[move].max_pp})"
+
         return str
 
     moves = player.moves

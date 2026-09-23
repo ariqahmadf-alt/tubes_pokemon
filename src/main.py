@@ -585,7 +585,7 @@ async def main():
                 elif event.key == pygame.K_RIGHT:
                     characters[0].moving_dir = 3
                 elif event.key == pygame.K_SPACE:
-                    can_attack = battle.player.moves[battle.chosen_move].pp > 0
+                    can_attack = battle.player.moves[battle.chosen_move].pp != 0
                     if battle.turn_step == 0 and can_attack:
                         (battle.battle_text, battle.move_logs) = (
                             battle.player.choose_move(
@@ -598,7 +598,10 @@ async def main():
                         battle.turn_step += 1
                     elif battle.turn_step == 1:
                         battle.turn_step += 1
+
+                        # enemy AI here
                         battle.battle_text = battle.rival.name + " is thinking..."
+
                     elif battle.turn_step == 2:
                         (battle.battle_text, battle.move_logs) = (
                             battle.rival.choose_move(
