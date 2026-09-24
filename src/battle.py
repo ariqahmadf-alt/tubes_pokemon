@@ -84,7 +84,7 @@ rival = Pokemon(
     ],
 )
 
-# Baru Minimax
+# Baru, Minimax & alpha-beta
 from math import inf
 
 
@@ -130,6 +130,81 @@ def evaluate(rival_state, player_state):
         + (rival_state.defense - player_state.defense) * 2
     )
 
+def alpha_beta(
+    rival_state,
+    player_state,
+    depth,
+    alpha,
+    beta,
+    maximizing,
+):
+    if (
+        depth == 0
+        or rival_state.hp <= 0
+        or player_state.hp <= 0
+    ):
+        return evaluate(rival_state, player_state)
+
+    if maximizing:
+        best_score = -inf
+
+        for move_idx in available_moves(rival_state):
+            next_rival = deepcopy(rival_state)
+            next_player = deepcopy(player_state)
+
+            simulate_move(
+                next_rival,
+                next_player,
+                move_idx,
+            )
+
+            score = alpha_beta(
+                next_rival,
+                next_player,
+                depth - 1,
+                alpha,
+                beta,
+                False,
+            )
+
+            best_score = max(best_score, score)
+            alpha = max(alpha, best_score)
+
+            # Cabang berikutnya tidak mungkin lebih baik
+            if beta <= alpha:
+                break
+
+        return best_score
+
+    best_score = inf
+
+    for move_idx in available_moves(player_state):
+        next_rival = deepcopy(rival_state)
+        next_player = deepcopy(player_state)
+
+        simulate_move(
+            next_player,
+            next_rival,
+            move_idx,
+        )
+
+        score = alpha_beta(
+            next_rival,
+            next_player,
+            depth - 1,
+            alpha,
+            beta,
+            True,
+        )
+
+        best_score = min(best_score, score)
+        beta = min(beta, best_score)
+
+        # Cabang berikutnya tidak mungkin lebih baik
+        if beta <= alpha:
+            break
+
+    return best_score
 
 def minimax(rival_state, player_state, depth, maximizing):
     if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
@@ -175,9 +250,11 @@ def minimax(rival_state, player_state, depth, maximizing):
     return best_score
 
 
-def choose_rival_move(depth=2):
+def choose_rival_move(depth=2, type="minimax"):
     best_move = 0
     best_score = -inf
+    alpha = -inf
+    beta = inf
 
     for move_idx in available_moves(rival):
         simulated_rival = deepcopy(rival)
@@ -189,16 +266,30 @@ def choose_rival_move(depth=2):
             move_idx,
         )
 
-        score = minimax(
+        score = 0
+        if type == "minimax":
+            score = minimax(
+                simulated_rival,
+                simulated_player,
+                depth - 1,
+                False,
+            )
+
+        elif type == "alpha-beta":
+            score = alpha_beta(
             simulated_rival,
             simulated_player,
             depth - 1,
+            alpha,
+            beta,
             False,
         )
 
         if score > best_score:
             best_score = score
             best_move = move_idx
+            
+        alpha = max(alpha, best_score)
 
     return best_move
 
