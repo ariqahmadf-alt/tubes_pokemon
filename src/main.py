@@ -579,8 +579,10 @@ def next_step():
         battle.battle_text = battle.rival.name + " is thinking..."
 
     elif battle.turn_step == 2:
+        rival_move = battle.choose_rival_move(depth=2)
+        
         (battle.battle_text, battle.move_logs) = battle.rival.choose_move(
-            0,
+            rival_move,
             battle.battle_text,
             battle.move_logs,
             battle.player,

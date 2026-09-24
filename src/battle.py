@@ -52,24 +52,14 @@ class Pokemon:
 
     def choose_move(self, move_idx, b_text, logs, enemy):
         move = self.moves[move_idx]
-        match move_idx:
-            case 0:
-                enemy.hp = max(enemy.hp - (move.value - enemy.defense), 0)
-                enemy.defense = max(enemy.defense - move.value, 0)
-            case 1:
-                self.defense += move.value
-            case 2:
-                self.hp = min(self.hp + move.value, self.max_hp)
-            case 3:
-                for move in self.moves:
-                    move.pp = move.max_pp
 
-        # use PP if it's not an infinite move
-        if move.pp != -1:
-            move.pp -= 1
+        simulate_move(self, enemy, move_idx)
+
         b_text = self.name + " used " + move.name + "!\n(" + str(move.value) + ")"
+
         move_entry = MoveLogEntry(move, self.name)
         logs.append(move_entry)
+
         return (b_text, logs)
 
 
@@ -94,6 +84,123 @@ rival = Pokemon(
     ],
 )
 
+# Baru Minimax
+from math import inf
+
+
+def available_moves(pokemon):
+    return [
+        index
+        for index, move in enumerate(pokemon.moves)
+        if move.pp != 0
+    ]
+
+
+def simulate_move(actor, enemy, move_idx):
+    move = actor.moves[move_idx]
+
+    if move_idx == 0:  # ATTACK
+        damage = max(move.value - enemy.defense, 0)
+        enemy.hp = max(enemy.hp - damage, 0)
+        enemy.defense = max(enemy.defense - move.value, 0)
+
+    elif move_idx == 1:  # DEFEND
+        actor.defense += move.value
+
+    elif move_idx == 2:  # HEAL
+        actor.hp = min(actor.hp + move.value, actor.max_hp)
+
+    elif move_idx == 3:  # REST
+        for actor_move in actor.moves:
+            actor_move.pp = actor_move.max_pp
+
+    if move.pp != -1:
+        move.pp -= 1
+
+
+def evaluate(rival_state, player_state):
+    if player_state.hp <= 0:
+        return 100000
+
+    if rival_state.hp <= 0:
+        return -100000
+
+    return (
+        (rival_state.hp - player_state.hp) * 10
+        + (rival_state.defense - player_state.defense) * 2
+    )
+
+
+def minimax(rival_state, player_state, depth, maximizing):
+    if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
+        return evaluate(rival_state, player_state)
+
+    if maximizing:
+        best_score = -inf
+
+        for move_idx in available_moves(rival_state):
+            next_rival = deepcopy(rival_state)
+            next_player = deepcopy(player_state)
+
+            simulate_move(next_rival, next_player, move_idx)
+
+            score = minimax(
+                next_rival,
+                next_player,
+                depth - 1,
+                False,
+            )
+
+            best_score = max(best_score, score)
+
+        return best_score
+
+    best_score = inf
+
+    for move_idx in available_moves(player_state):
+        next_rival = deepcopy(rival_state)
+        next_player = deepcopy(player_state)
+
+        simulate_move(next_player, next_rival, move_idx)
+
+        score = minimax(
+            next_rival,
+            next_player,
+            depth - 1,
+            True,
+        )
+
+        best_score = min(best_score, score)
+
+    return best_score
+
+
+def choose_rival_move(depth=2):
+    best_move = 0
+    best_score = -inf
+
+    for move_idx in available_moves(rival):
+        simulated_rival = deepcopy(rival)
+        simulated_player = deepcopy(player)
+
+        simulate_move(
+            simulated_rival,
+            simulated_player,
+            move_idx,
+        )
+
+        score = minimax(
+            simulated_rival,
+            simulated_player,
+            depth - 1,
+            False,
+        )
+
+        if score > best_score:
+            best_score = score
+            best_move = move_idx
+
+    return best_move
 
 def printLogs():
     for log in move_logs:
