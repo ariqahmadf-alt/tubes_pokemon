@@ -54,7 +54,8 @@ class Pokemon:
         move = self.moves[move_idx]
         match move_idx:
             case 0:
-                enemy.hp -= max(move.value - enemy.defense, 0)
+                enemy.hp = max(enemy.hp - (move.value - enemy.defense), 0)
+                enemy.defense = max(enemy.defense - move.value, 0)
             case 1:
                 self.defense += move.value
             case 2:
@@ -62,6 +63,7 @@ class Pokemon:
             case 3:
                 for move in self.moves:
                     move.pp = move.max_pp
+
         # use PP if it's not an infinite move
         if move.pp != -1:
             move.pp -= 1
