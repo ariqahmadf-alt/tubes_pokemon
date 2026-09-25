@@ -545,7 +545,7 @@ class Character:
 # initialize characters
 characters = []
 characters.append(Character(maze.points[9][7], "player", 5))
-characters.append(Character(maze.points[5][6], "rival", 2))
+characters.append(Character(maze.points[9][7], "rival", 2))
 
 
 def draw_points(screen):
@@ -579,8 +579,8 @@ def next_step():
         battle.battle_text = battle.rival.name + " is thinking..."
 
     elif battle.turn_step == 2:
-        rival_move = battle.choose_rival_move(2, "alpha-beta")
-        
+        rival_move = battle.choose_rival_move(2, config.ai_type)
+
         (battle.battle_text, battle.move_logs) = battle.rival.choose_move(
             rival_move,
             battle.battle_text,
