@@ -13,4 +13,4 @@ rival_speed = 2
 # Rival AI type.
 # 0 - minimax (alpha-beta no pruning)
 # 1 - alpha-beta (w/ pruning)
-ai_type = "alpha-beta"
+ai_type = "minimax"

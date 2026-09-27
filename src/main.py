@@ -100,6 +100,7 @@ class Character:
             # initiate dialog if rival is near player
             if self.ai_type == 2 and (self.pos - characters[0].pos).magnitude() < 45:
                 battle.battle_text = "I heard you haven't invested in\nOpenAI. Are you one of those\n'pencil-sloppers'?"
+                return
 
             # prepare points for ghost AI
             for y in range(len(maze.points)):
@@ -187,7 +188,7 @@ class Character:
     def astar_explore(self, start):
         frontier = []
         tie_breaker = count()
-        target_pos = pygame.mouse.get_pos()
+        target_pos = characters[0].pos
 
         def heuristic(point):
             return dist(point.spos(), target_pos)
@@ -544,8 +545,8 @@ class Character:
 
 # initialize characters
 characters = []
-characters.append(Character(maze.points[9][7], "player", 5))
-characters.append(Character(maze.points[9][7], "rival", 2))
+characters.append(Character(maze.points[11][7], "player", 5))
+characters.append(Character(maze.points[10][11], "rival", 2))
 
 
 def draw_points(screen):
@@ -599,6 +600,7 @@ async def main():
     running = True
     maze_og_toggle = True
     active_ghost = 0
+    noticed = False
     font = pygame.font.Font("assets/pkmn.ttf", 24)
     state = "overworld"
 
@@ -670,12 +672,18 @@ async def main():
             screen.blit(final_img, maze.rect)
 
             # draw_points(screen)
-            characters[1].ai()
             characters[1].draw(screen)
-            characters[0].ai()
             characters[0].draw(screen)
+            characters[0].ai()
             if battle.battle_text != "":
                 battle.draw_battle_text(screen, font)
+
+            if noticed:
+                characters[1].ai()
+            elif abs(characters[0].pos.x) == abs(characters[1].pos.x) or abs(
+                characters[0].pos.y
+            ) == abs(characters[1].pos.y):
+                noticed = True
         elif state == "battle":
             if battle.turn_step != 0:
                 battle.draw_battle_text(screen, font)
