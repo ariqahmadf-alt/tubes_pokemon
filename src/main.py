@@ -545,8 +545,8 @@ class Character:
 
 # initialize characters
 characters = []
-characters.append(Character(maze.points[11][7], "player", 5))
-characters.append(Character(maze.points[10][11], "rival", 2))
+characters.append(Character(maze.points[11][10], "player", 5))
+characters.append(Character(maze.points[3][7], "rival", 2))
 
 
 def draw_points(screen):
