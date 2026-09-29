@@ -602,7 +602,7 @@ async def main():
     active_ghost = 0
     noticed = False
     font = pygame.font.Font("assets/pkmn.ttf", 24)
-    state = "overworld"
+    state = "battle"
 
     while running:
         for event in pygame.event.get():
@@ -628,11 +628,11 @@ async def main():
                     characters[0].moving_dir = 2
                 elif event.key == pygame.K_RIGHT and battle.battle_text == "":
                     characters[0].moving_dir = 3
-                elif event.key == pygame.K_s and state == "battle":
+                elif event.key == pygame.K_w and state == "battle":
                     battle.chosen_log = min(
                         battle.chosen_log + 1, len(battle.move_logs) - 1
                     )
-                elif event.key == pygame.K_w and state == "battle":
+                elif event.key == pygame.K_q and state == "battle":
                     battle.chosen_log = max(battle.chosen_log - 1, 0)
                 elif event.key == pygame.K_SPACE:
                     if state == "battle":
@@ -651,6 +651,15 @@ async def main():
                         config.ai_type = "alpha-beta"
                 elif event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.key == pygame.K_d:
+                    battle.hp_weight = 2
+                    battle.def_weight = 15
+                elif event.key == pygame.K_s:
+                    battle.hp_weight = 10
+                    battle.def_weight = 2 
+                elif event.key == pygame.K_a:
+                    battle.hp_weight = 25
+                    battle.def_weight = 1  
 
             elif event.type == pygame.KEYUP:
                 # player will stop moving upon reaching its target

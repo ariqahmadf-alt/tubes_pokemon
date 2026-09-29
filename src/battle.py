@@ -68,9 +68,9 @@ player = Pokemon(
     "PIKACHU",
     100,
     [
-        Move("ATTACK", 5, 10),
-        Move("DEFEND", 5, 10),
-        Move("HEAL", 5, 10),
+        Move("ATTACK", 5, 15),
+        Move("DEFEND", 5, 15),
+        Move("HEAL", 5, 20),
         Move("REST", -1, -1),  # -1 PP means infinite move
     ],
 )
@@ -78,9 +78,9 @@ rival = Pokemon(
     "CHARIZARD",
     100,
     [
-        Move("ATTACK", 5, 10),
-        Move("DEFEND", 5, 10),
-        Move("HEAL", 5, 10),
+        Move("ATTACK", 999, 10),
+        Move("DEFEND", 999, 10),
+        Move("HEAL", 999, 15),
         Move("REST", -1, -1),  # -1 PP means infinite move
     ],
 )
@@ -111,6 +111,11 @@ def simulate_move(actor, enemy, move_idx):
     if move.pp != -1:
         move.pp -= 1
 
+# 0 - 10 HP, 2 DEF
+# 1 - 25 HP, 1 DEF
+# 2 - 5 HP, 15 DEF
+hp_weight = 10
+def_weight = 2
 
 def evaluate(rival_state, player_state):
     if player_state.hp <= 0:
@@ -119,9 +124,8 @@ def evaluate(rival_state, player_state):
     if rival_state.hp <= 0:
         return -100000
 
-    return (rival_state.hp - player_state.hp) * 10 + (
-        rival_state.defense - player_state.defense
-    ) * 2
+    return (rival_state.hp - player_state.hp) * hp_weight + \
+       (rival_state.defense - player_state.defense) * def_weight
 
 
 def minimax(rival_state, player_state, depth, maximizing):
@@ -774,6 +778,11 @@ def node_overlay(screen, font):
     mode_text = "ALPHA-BETA (PRUNING)" if ai_mode == "alpha-beta" else "MINIMAX (NO PRUNING)"
     screen.blit(f_big.render(f"AI SEARCH TREE - TURN {last_rival_turn}", False, "black"), (15, 8))
     screen.blit(f_mid.render(f"{mode_text}   DEPTH: {search_depth}   [N] CLOSE", False, DARK), (15, 32))
+
+    # --------- priority --------
+    screen.blit(f_big.render(f"AI Priority (weights):", False, "black"), (15, 55))
+    screen.blit(f_big.render(f"HP: {hp_weight}", False, "black"), (15, 80))
+    screen.blit(f_big.render(f"DEF: {def_weight}", False, "black"), (15, 110))
 
     # ---------- layout ----------
     mids = root["children"]
