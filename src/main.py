@@ -644,6 +644,13 @@ async def main():
                 elif event.key == pygame.K_m:
                     maze_og_toggle = not maze_og_toggle
                     battle.showing_log = not battle.showing_log
+                elif event.key == pygame.K_k:
+                    if config.ai_type == "alpha-beta":
+                        config.ai_type = "minimax"
+                    else:
+                        config.ai_type = "alpha-beta"
+                elif event.key == pygame.K_ESCAPE:
+                    running = False
 
             elif event.type == pygame.KEYUP:
                 # player will stop moving upon reaching its target
