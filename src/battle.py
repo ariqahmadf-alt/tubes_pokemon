@@ -124,32 +124,51 @@ def evaluate(rival_state, player_state):
     ) * 2
 
 
-def alpha_beta(
-    rival_state,
-    player_state,
-    depth,
-    alpha,
-    beta,
-    maximizing,
-):
+def minimax(rival_state, player_state, depth, maximizing):
     if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
         return evaluate(rival_state, player_state)
 
-    check_state = player_state
-    best_score = inf
-    if maximizing:
-        check_state = rival_state
-        best_score = -inf
+    actor = rival_state if maximizing else player_state
+    best_score = -inf if maximizing else inf
 
-    for move_idx in available_moves(check_state):
+    for move_idx in available_moves(actor):
         next_rival = deepcopy(rival_state)
         next_player = deepcopy(player_state)
 
-        simulate_move(
-            next_player,
+        if maximizing:
+            simulate_move(next_rival, next_player, move_idx)
+        else:
+            simulate_move(next_player, next_rival, move_idx)
+
+        score = minimax(
             next_rival,
-            move_idx,
+            next_player,
+            depth - 1,
+            not maximizing,
         )
+
+        if maximizing:
+            best_score = max(best_score, score)
+        else:
+            best_score = min(best_score, score)
+
+    return best_score
+
+def alpha_beta(rival_state, player_state, depth, alpha, beta, maximizing):
+    if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
+        return evaluate(rival_state, player_state)
+
+    actor = rival_state if maximizing else player_state
+    best_score = -inf if maximizing else inf
+
+    for move_idx in available_moves(actor):
+        next_rival = deepcopy(rival_state)
+        next_player = deepcopy(player_state)
+
+        if maximizing:
+            simulate_move(next_rival, next_player, move_idx)
+        else:
+            simulate_move(next_player, next_rival, move_idx)
 
         score = alpha_beta(
             next_rival,
@@ -157,45 +176,18 @@ def alpha_beta(
             depth - 1,
             alpha,
             beta,
-            True,
+            not maximizing,
         )
 
-        best_score = min(best_score, score)
-        beta = min(beta, best_score)
+        if maximizing:
+            best_score = max(best_score, score)
+            alpha = max(alpha, best_score)
+        else:
+            best_score = min(best_score, score)
+            beta = min(beta, best_score)
 
-        # Cabang berikutnya tidak mungkin lebih baik
         if beta <= alpha:
             break
-
-    return best_score
-
-
-def minimax(rival_state, player_state, depth, maximizing):
-    if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
-        return evaluate(rival_state, player_state)
-
-    check_state = player_state
-    best_score = inf
-    if maximizing:
-        check_state = rival_state
-        best_score = -inf
-
-    for move_idx in available_moves(check_state):
-        # evaluate the score of this move
-
-        next_rival = deepcopy(rival_state)
-        next_player = deepcopy(player_state)
-
-        simulate_move(next_player, next_rival, move_idx)
-
-        score = minimax(
-            next_rival,
-            next_player,
-            depth - 1,
-            True,
-        )
-
-        best_score = min(best_score, score)
 
     return best_score
 
@@ -416,24 +408,29 @@ def draw_ai_brain(screen, font):
             leaf_count += 1
             return evaluate(rival_state, player_state)
 
-        check_state = player_state
-        best_score = inf
-        if maximizing:
-            check_state = rival_state
-            best_score = -inf
+        actor = rival_state if maximizing else player_state
+        best_score = -inf if maximizing else inf
 
-        for move_idx in available_moves(check_state):
+        for move_idx in available_moves(actor):
             next_rival = deepcopy(rival_state)
             next_player = deepcopy(player_state)
-            simulate_move(next_player, next_rival, move_idx)
+
+            if maximizing:
+                simulate_move(next_rival, next_player, move_idx)
+            else:
+                simulate_move(next_player, next_rival, move_idx)
 
             score = traced_minimax(
                 next_rival,
                 next_player,
                 depth - 1,
-                True,
+                not maximizing,
             )
-            best_score = min(best_score, score)
+
+            if maximizing:
+                best_score = max(best_score, score)
+            else:
+                best_score = min(best_score, score)
 
         return best_score
 
@@ -452,17 +449,17 @@ def draw_ai_brain(screen, font):
             leaf_count += 1
             return evaluate(rival_state, player_state)
 
-        check_state = player_state
-        best_score = inf
-        if maximizing:
-            check_state = rival_state
-            best_score = -inf
-
-        moves_to_check = available_moves(check_state)
+        actor = rival_state if maximizing else player_state
+        best_score = -inf if maximizing else inf
+        moves_to_check = available_moves(actor)
         for move_pos, move_idx in enumerate(moves_to_check):
             next_rival = deepcopy(rival_state)
             next_player = deepcopy(player_state)
-            simulate_move(next_player, next_rival, move_idx)
+
+            if maximizing:
+                simulate_move(next_rival, next_player, move_idx)
+            else:
+                simulate_move(next_player, next_rival, move_idx)
 
             score = traced_alpha_beta(
                 next_rival,
@@ -470,11 +467,15 @@ def draw_ai_brain(screen, font):
                 depth - 1,
                 alpha,
                 beta,
-                True,
+                not maximizing,
             )
 
-            best_score = min(best_score, score)
-            beta = min(beta, best_score)
+            if maximizing:
+                best_score = max(best_score, score)
+                alpha = max(alpha, best_score)
+            else:
+                best_score = min(best_score, score)
+                beta = min(beta, best_score)
 
             if beta <= alpha:
                 pruned_count += len(moves_to_check) - move_pos - 1
