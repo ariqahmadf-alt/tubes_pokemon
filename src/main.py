@@ -639,6 +639,8 @@ async def main():
                         next_step()
                     elif battle.battle_text != "":
                         state = "battle"
+                elif event.key == pygame.K_n and state == "battle":
+                    battle.showing_nodes = not battle.showing_nodes
                 elif event.key == pygame.K_m:
                     maze_og_toggle = not maze_og_toggle
                     battle.showing_log = not battle.showing_log
@@ -695,6 +697,8 @@ async def main():
                 battle.draw_logs(screen, font)
             else:
                 battle.draw_ai_brain(screen, font)
+            if battle.showing_nodes:
+                battle.node_overlay(screen, font)
 
         pygame.display.flip()
         # print(pygame.mouse.get_pos())
