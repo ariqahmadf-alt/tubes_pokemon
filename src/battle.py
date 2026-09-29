@@ -876,6 +876,6 @@ def node_overlay(screen, font):
             (15, 545),
         )
     screen.blit(
-        f_small.render("GREEN = CHOSEN PATH   DASHED/FADED = PRUNED   MOVE NAME UNDER LEAF = PIKACHU REPLY", False, DARK),
+        f_small.render("GREEN: CHOSEN, DASHED/FADED: PRUNED, MOVE UNDER LEAF: PIKACHU REPLY", False, DARK),
         (15, 575),
     )
