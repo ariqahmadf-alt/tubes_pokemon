@@ -322,12 +322,12 @@ def draw_pokemon(screen):
 
 def draw_stats(screen, font):
     screen.blit(font.render(player.name, False, "black"), (380, 250))
-    screen.blit(
-        font.render(f"HP: {player.hp}/{player.max_hp}", False, "black"), (380, 300)
-    )
+    screen.blit(font.render(f"HP: {player.hp}/{player.max_hp}", False, "black"), (380, 300))
+    screen.blit(font.render(f"DEF: {player.defense}", False, "black"), (380, 340))
+    
     screen.blit(font.render(rival.name, False, "black"), (70, 20))
     screen.blit(font.render(f"HP: {rival.hp}/{rival.max_hp}", False, "black"), (70, 70))
-
+    screen.blit(font.render(f"DEF: {rival.defense}", False, "black"), (70, 110))
 
 def draw_logs(screen, font):
     scaled = scale_sprite(vert_box, 8, (900 - 260, -50))
@@ -341,7 +341,7 @@ def draw_logs(screen, font):
     for i in range(len(move_logs)):
         if i < chosen_log:
             continue
-        y = 40 + ((i - chosen_log) * 110)
+        y = 40 + ((i - chosen_log) * 150)
         log = move_logs[i]
         screen.blit(
             font.render(f"{i + 1}", False, "black"),
@@ -359,10 +359,18 @@ def draw_logs(screen, font):
             font.render(f"{log.rival.hp}", False, (205, 0, 0)),
             (900 - 10, y),
         )
+        screen.blit(
+            font.render(f"{log.player.defense}", False, (0, 0, 205)),
+            (900 - 130, y+40),
+        )
+        screen.blit(
+            font.render(f"{log.rival.defense}", False, (0, 0, 205)),
+            (900 - 10, y+40),
+        )
         text = font.render(f"{log.move.name}", False, "black")
-        side = text.get_rect(topleft=(900 - 230, y + 40))
+        side = text.get_rect(topleft=(900 - 230, y + 80))
         if log.user == "CHARIZARD":
-            side = text.get_rect(topright=(900 + 40, y + 40))
+            side = text.get_rect(topright=(900 + 40, y + 80))
         screen.blit(text, side)
 
 
