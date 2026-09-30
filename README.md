@@ -145,9 +145,9 @@ Sistem menyediakan beberapa tampilan untuk membantu pemeriksaan proses AI:
 
 ## Demo dan Repositori
 
-- Demo Web (GitHub Pages): https://ariqahmadf-alt.github.io/tubes_pacman/
-- Repositori Git: https://github.com/ariqahmadf-alt/tubes_pacman
-- Video Demo: https://youtu.be/6Aujp2wkP2U
+- Demo Web (GitHub Pages): https://ariqahmadf-alt.github.io/tubes_pokemon/
+- Repositori Git: https://github.com/ariqahmadf-alt/tubes_pokemon/tree/node-overlay
+- Video Demo: https://youtu.be/i6IImxUEIKA
 
 ## Tim
 
