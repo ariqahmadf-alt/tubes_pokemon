@@ -707,11 +707,11 @@ async def main():
             ) == abs(characters[1].pos.y):
                 noticed = True
         elif state == "battle":
+            battle.draw_pokemon(screen)
             if battle.turn_step != 0:
                 battle.draw_battle_text(screen, font)
             else:
                 battle.draw_moves(screen, font)
-            battle.draw_pokemon(screen)
             battle.draw_stats(screen, font)
             if battle.showing_log:
                 battle.draw_logs(screen, font)

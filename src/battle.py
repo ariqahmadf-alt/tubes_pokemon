@@ -6,8 +6,7 @@ from math import inf
 box = pygame.image.load("assets/box.png")
 vert_box = pygame.image.load("assets/vert_box.png")
 options = pygame.image.load("assets/options.png")
-pikachu = pygame.image.load("assets/pokemon/pokemon_19.png")
-charizard = pygame.image.load("assets/pokemon/pokemon_16.png")
+
 move_logs = []
 chosen_move = 0
 battle_text = ""
@@ -56,6 +55,8 @@ class Pokemon:
         self.defense = 0
         self.max_hp = hp
         self.moves = moves
+        self.player_img = ""
+        self.rival_img = ""
 
     def choose_move(self, move_idx, b_text, logs, enemy):
         move = self.moves[move_idx]
@@ -70,67 +71,144 @@ class Pokemon:
         return (b_text, logs)
 
 
+# load all 10 pokemon
+pokemons = [
+    Pokemon(
+        "KOBRA",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "BLASTOISE",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "JIGGLYTUFF",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "JIGGLYTUFF",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "RAPIDASH",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "HAUNTER",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "ONYX",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "MEGUNIM",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "LUGIA",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "CHARIZARD",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+    Pokemon(
+        "PIKACHU",
+        100,
+        [
+            Move("ATTACK", 5, 15),
+            Move("DEFEND", 5, 15),
+            Move("HEAL", 5, 20),
+            Move("REST", -1, -1),  # -1 PP means infinite move
+        ],
+    ),
+]
+
+# load all pokemon images (player & rival side)
+for i in range(3):
+    pokemons[i].player_img = pygame.image.load(
+        f"assets/pokemon/pokemon_{i * 2 + 1}.png"
+    )
+    pokemons[i].rival_img = pygame.image.load(f"assets/pokemon/pokemon_{i * 2}.png")
+
+# trainer data
 player_trainer = Trainer(
     "player",
     [
-        Pokemon(
-            "PIKACHU",
-            100,
-            [
-                Move("ATTACK", 5, 15),
-                Move("DEFEND", 5, 15),
-                Move("HEAL", 5, 20),
-                Move("REST", -1, -1),  # -1 PP means infinite move
-            ],
-        ),
-        Pokemon(
-            "JIGGLYTUFF",
-            50,
-            [
-                Move("ATTACK", 5, 15),
-                Move("DEFEND", 5, 15),
-                Move("HEAL", 5, 20),
-                Move("REST", -1, -1),  # -1 PP means infinite move
-            ],
-        ),
+        pokemons[0],
     ],
 )
 rival_trainer = Trainer(
     "rival",
     [
-        Pokemon(
-            "CHARIZARD",
-            100,
-            [
-                Move("ATTACK", 999, 10),
-                Move("DEFEND", 999, 10),
-                Move("HEAL", 999, 15),
-                Move("REST", -1, -1),  # -1 PP means infinite move
-            ],
-        ),
+        pokemons[1],
     ],
 )
 
-player = Pokemon(
-    "PIKACHU",
-    100,
-    [
-        Move("ATTACK", 5, 15),
-        Move("DEFEND", 5, 15),
-        Move("HEAL", 5, 20),
-        Move("REST", -1, -1),  # -1 PP means infinite move
-    ],
-)
-rival = Pokemon(
-    "CHARIZARD",
-    100,
-    [
-        Move("ATTACK", 999, 10),
-        Move("DEFEND", 999, 10),
-        Move("HEAL", 999, 15),
-        Move("REST", -1, -1),  # -1 PP means infinite move
-    ],
-)
+# the currently-active pokemon (both sides)
+player = player_trainer.pokemon[0]
+rival = rival_trainer.pokemon[0]
 
 
 def available_moves(pokemon):
@@ -345,6 +423,13 @@ def draw_moves(screen, font):
     screen.blit(font.render(chosen(3), False, "black"), (30, 530))
 
 
+def draw_pokemon(screen):
+    scaled = scale_sprite(player.player_img, 4, (60, 132))
+    screen.blit(scaled[0], scaled[1])
+
+    scaled = scale_sprite(rival.rival_img, 4, (370, 10))
+    screen.blit(scaled[0], scaled[1])
+
 def draw_battle_text(screen, font):
     sprite = scale_sprite(box, 5, (0, 380))
     screen.blit(sprite[0], sprite[1])
@@ -359,12 +444,7 @@ def draw_battle_text(screen, font):
     )
 
 
-def draw_pokemon(screen):
-    scaled = scale_sprite(pikachu, 4, (60, 132))
-    screen.blit(scaled[0], scaled[1])
 
-    scaled = scale_sprite(charizard, 4, (410, 10))
-    screen.blit(scaled[0], scaled[1])
 
 
 def draw_stats(screen, font):
