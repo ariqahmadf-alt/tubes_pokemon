@@ -6,8 +6,8 @@ from math import inf
 box = pygame.image.load("assets/box.png")
 vert_box = pygame.image.load("assets/vert_box.png")
 options = pygame.image.load("assets/options.png")
-pikachu = pygame.image.load("assets/pikachu.png")
-charizard = pygame.image.load("assets/charizard.png")
+pikachu = pygame.image.load("assets/pokemon/pokemon_19.png")
+charizard = pygame.image.load("assets/pokemon/pokemon_16.png")
 move_logs = []
 chosen_move = 0
 battle_text = ""
@@ -43,6 +43,12 @@ class Move:
         self.value = value
 
 
+class Trainer:
+    def __init__(self, name, pokemon):
+        self.name = name
+        self.pokemon = pokemon
+
+
 class Pokemon:
     def __init__(self, name, hp, moves):
         self.name = name
@@ -63,6 +69,47 @@ class Pokemon:
 
         return (b_text, logs)
 
+
+player_trainer = Trainer(
+    "player",
+    [
+        Pokemon(
+            "PIKACHU",
+            100,
+            [
+                Move("ATTACK", 5, 15),
+                Move("DEFEND", 5, 15),
+                Move("HEAL", 5, 20),
+                Move("REST", -1, -1),  # -1 PP means infinite move
+            ],
+        ),
+        Pokemon(
+            "JIGGLYTUFF",
+            50,
+            [
+                Move("ATTACK", 5, 15),
+                Move("DEFEND", 5, 15),
+                Move("HEAL", 5, 20),
+                Move("REST", -1, -1),  # -1 PP means infinite move
+            ],
+        ),
+    ],
+)
+rival_trainer = Trainer(
+    "rival",
+    [
+        Pokemon(
+            "CHARIZARD",
+            100,
+            [
+                Move("ATTACK", 999, 10),
+                Move("DEFEND", 999, 10),
+                Move("HEAL", 999, 15),
+                Move("REST", -1, -1),  # -1 PP means infinite move
+            ],
+        ),
+    ],
+)
 
 player = Pokemon(
     "PIKACHU",
@@ -111,11 +158,13 @@ def simulate_move(actor, enemy, move_idx):
     if move.pp != -1:
         move.pp -= 1
 
+
 # 0 - 10 HP, 2 DEF
 # 1 - 25 HP, 1 DEF
 # 2 - 5 HP, 15 DEF
 hp_weight = 10
 def_weight = 2
+
 
 def evaluate(rival_state, player_state):
     if player_state.hp <= 0:
@@ -124,8 +173,9 @@ def evaluate(rival_state, player_state):
     if rival_state.hp <= 0:
         return -100000
 
-    return (rival_state.hp - player_state.hp) * hp_weight + \
-       (rival_state.defense - player_state.defense) * def_weight
+    return (rival_state.hp - player_state.hp) * hp_weight + (
+        rival_state.defense - player_state.defense
+    ) * def_weight
 
 
 def minimax(rival_state, player_state, depth, maximizing):
@@ -157,6 +207,7 @@ def minimax(rival_state, player_state, depth, maximizing):
             best_score = min(best_score, score)
 
     return best_score
+
 
 def alpha_beta(rival_state, player_state, depth, alpha, beta, maximizing):
     if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
@@ -318,12 +369,15 @@ def draw_pokemon(screen):
 
 def draw_stats(screen, font):
     screen.blit(font.render(player.name, False, "black"), (380, 250))
-    screen.blit(font.render(f"HP: {player.hp}/{player.max_hp}", False, "black"), (380, 300))
+    screen.blit(
+        font.render(f"HP: {player.hp}/{player.max_hp}", False, "black"), (380, 300)
+    )
     screen.blit(font.render(f"DEF: {player.defense}", False, "black"), (380, 340))
-    
+
     screen.blit(font.render(rival.name, False, "black"), (70, 20))
     screen.blit(font.render(f"HP: {rival.hp}/{rival.max_hp}", False, "black"), (70, 70))
     screen.blit(font.render(f"DEF: {rival.defense}", False, "black"), (70, 110))
+
 
 def draw_logs(screen, font):
     scaled = scale_sprite(vert_box, 8, (900 - 260, -50))
@@ -357,11 +411,11 @@ def draw_logs(screen, font):
         )
         screen.blit(
             font.render(f"{log.player.defense}", False, (0, 0, 205)),
-            (900 - 130, y+40),
+            (900 - 130, y + 40),
         )
         screen.blit(
             font.render(f"{log.rival.defense}", False, (0, 0, 205)),
-            (900 - 10, y+40),
+            (900 - 10, y + 40),
         )
         text = font.render(f"{log.move.name}", False, "black")
         side = text.get_rect(topleft=(900 - 230, y + 80))
@@ -576,6 +630,7 @@ def draw_ai_brain(screen, font):
             (left, y),
         )
 
+
 # NODE OVERLAY GOES HERE
 # Toggle dengan tombol N (lihat main.py). Menampilkan pohon pencarian AI:
 #   root (Charizard / MAX) -> tiap move Charizard (MIN) -> tiap balasan Pikachu (leaf)
@@ -642,9 +697,13 @@ def _build_search_tree(rival_state, player_state, depth, mode):
             else:
                 simulate_move(next_player, next_rival, move_idx)
 
-            child = new_node(actor.moves[move_idx].name, "MAX" if not maximizing else "MIN")
+            child = new_node(
+                actor.moves[move_idx].name, "MAX" if not maximizing else "MIN"
+            )
             node["children"].append(child)
-            score = search(next_rival, next_player, d - 1, alpha, beta, not maximizing, child)
+            score = search(
+                next_rival, next_player, d - 1, alpha, beta, not maximizing, child
+            )
 
             if maximizing:
                 best = max(best, score)
@@ -655,8 +714,10 @@ def _build_search_tree(rival_state, player_state, depth, mode):
 
             if prune and beta <= alpha:
                 # sisa cabang tidak pernah dievaluasi -> tandai sebagai pruned
-                for rest_idx in moves[pos + 1:]:
-                    cut = new_node(actor.moves[rest_idx].name, "MAX" if not maximizing else "MIN")
+                for rest_idx in moves[pos + 1 :]:
+                    cut = new_node(
+                        actor.moves[rest_idx].name, "MAX" if not maximizing else "MIN"
+                    )
                     cut["pruned"] = True
                     node["children"].append(cut)
                 break
@@ -718,8 +779,11 @@ def _dashed_line(screen, color, p1, p2, dash=6, gap=5, width=1):
     while pos < length:
         end = min(pos + dash, length)
         pygame.draw.line(
-            screen, color,
-            (x1 + dx * pos, y1 + dy * pos), (x1 + dx * end, y1 + dy * end), width,
+            screen,
+            color,
+            (x1 + dx * pos, y1 + dy * pos),
+            (x1 + dx * end, y1 + dy * end),
+            width,
         )
         pos += dash + gap
 
@@ -745,8 +809,10 @@ def node_overlay(screen, font):
     key = (
         ai_mode,
         last_rival_turn,
-        debug_player.hp, debug_player.defense,
-        debug_rival.hp, debug_rival.defense,
+        debug_player.hp,
+        debug_player.defense,
+        debug_rival.hp,
+        debug_rival.defense,
         tuple(m.pp for m in debug_rival.moves),
         tuple(m.pp for m in debug_player.moves),
     )
@@ -775,9 +841,17 @@ def node_overlay(screen, font):
     screen.blit(panel, (0, 0))
 
     # ---------- header ----------
-    mode_text = "ALPHA-BETA (PRUNING)" if ai_mode == "alpha-beta" else "MINIMAX (NO PRUNING)"
-    screen.blit(f_big.render(f"AI SEARCH TREE - TURN {last_rival_turn}", False, "black"), (15, 8))
-    screen.blit(f_mid.render(f"{mode_text}   DEPTH: {search_depth}   [N] CLOSE", False, DARK), (15, 32))
+    mode_text = (
+        "ALPHA-BETA (PRUNING)" if ai_mode == "alpha-beta" else "MINIMAX (NO PRUNING)"
+    )
+    screen.blit(
+        f_big.render(f"AI SEARCH TREE - TURN {last_rival_turn}", False, "black"),
+        (15, 8),
+    )
+    screen.blit(
+        f_mid.render(f"{mode_text}   DEPTH: {search_depth}   [N] CLOSE", False, DARK),
+        (15, 32),
+    )
 
     # --------- priority --------
     screen.blit(f_big.render(f"AI Priority (weights):", False, "black"), (15, 55))
@@ -803,7 +877,8 @@ def node_overlay(screen, font):
         slot += n_kids
     if mids:
         positions[id(root)] = (
-            (positions[id(mids[0])][0] + positions[id(mids[-1])][0]) / 2, y_root
+            (positions[id(mids[0])][0] + positions[id(mids[-1])][0]) / 2,
+            y_root,
         )
     else:
         positions[id(root)] = (W / 2, y_root)
@@ -848,8 +923,12 @@ def node_overlay(screen, font):
         _center_text(screen, f_mid, _fmt_score(m["value"]), "black", (mx, my))
 
         if ai_mode == "alpha-beta" and m["alpha"] is not None:
-            _center_text(screen, f_small, f"a={_fmt_bound(m['alpha'])}", DARK, (mx, my + 40))
-            _center_text(screen, f_small, f"b={_fmt_bound(m['beta'])}", DARK, (mx, my + 54))
+            _center_text(
+                screen, f_small, f"a={_fmt_bound(m['alpha'])}", DARK, (mx, my + 40)
+            )
+            _center_text(
+                screen, f_small, f"b={_fmt_bound(m['beta'])}", DARK, (mx, my + 54)
+            )
 
         if not m["children"]:
             leaves_seen += 1  # terminal (HP habis) -> node ini sendiri leaf
@@ -866,7 +945,13 @@ def node_overlay(screen, font):
                 continue
             leaves_seen += 1
             pygame.draw.rect(screen, (220, 232, 250), box, border_radius=6)
-            pygame.draw.rect(screen, GREEN if leaf["on_path"] else BLUE, box, 4 if leaf["on_path"] else 2, border_radius=6)
+            pygame.draw.rect(
+                screen,
+                GREEN if leaf["on_path"] else BLUE,
+                box,
+                4 if leaf["on_path"] else 2,
+                border_radius=6,
+            )
             _center_text(screen, f_small, _fmt_score(leaf["value"]), "black", (lx, ly))
             _center_text(screen, f_small, leaf["label"][:3], DARK, (lx, ly + 30))
 
@@ -881,10 +966,16 @@ def node_overlay(screen, font):
     best_label = next((c["label"] for c in mids if c["on_path"]), None)
     if best_label is not None:
         screen.blit(
-            f_mid.render(f"BEST: {best_label} ({_fmt_score(root['value'])})", False, GREEN),
+            f_mid.render(
+                f"BEST: {best_label} ({_fmt_score(root['value'])})", False, GREEN
+            ),
             (15, 545),
         )
     screen.blit(
-        f_small.render("GREEN: CHOSEN, DASHED/FADED: PRUNED, MOVE UNDER LEAF: PIKACHU REPLY", False, DARK),
+        f_small.render(
+            "GREEN: CHOSEN, DASHED/FADED: PRUNED, MOVE UNDER LEAF: PIKACHU REPLY",
+            False,
+            DARK,
+        ),
         (15, 575),
     )

@@ -602,7 +602,7 @@ async def main():
     active_ghost = 0
     noticed = False
     font = pygame.font.Font("assets/pkmn.ttf", 24)
-    state = "battle"
+    state = "overworld"
 
     while running:
         for event in pygame.event.get():
@@ -656,10 +656,14 @@ async def main():
                     battle.def_weight = 15
                 elif event.key == pygame.K_s:
                     battle.hp_weight = 10
-                    battle.def_weight = 2 
+                    battle.def_weight = 2
                 elif event.key == pygame.K_a:
                     battle.hp_weight = 25
-                    battle.def_weight = 1  
+                    battle.def_weight = 1
+                elif event.key == pygame.K_1:
+                    battle.player = battle.player_trainer.pokemon[0]
+                elif event.key == pygame.K_2:
+                    battle.player = battle.player_trainer.pokemon[1]
 
             elif event.type == pygame.KEYUP:
                 # player will stop moving upon reaching its target
