@@ -2,6 +2,7 @@ import pygame
 import config
 from copy import deepcopy
 from math import inf
+from utils import scale_sprite
 
 box = pygame.image.load("assets/box.png")
 vert_box = pygame.image.load("assets/vert_box.png")
@@ -57,6 +58,7 @@ class Pokemon:
         self.moves = moves
         self.player_img = ""
         self.rival_img = ""
+        self.idx = -1
 
     def choose_move(self, move_idx, b_text, logs, enemy):
         move = self.moves[move_idx]
@@ -186,23 +188,28 @@ pokemons = [
 ]
 
 # load all pokemon images (player & rival side)
-for i in range(3):
+for i in range(10):
     pokemons[i].player_img = pygame.image.load(
         f"assets/pokemon/pokemon_{i * 2 + 1}.png"
     )
     pokemons[i].rival_img = pygame.image.load(f"assets/pokemon/pokemon_{i * 2}.png")
+    pokemons[i].idx = i
 
 # trainer data
 player_trainer = Trainer(
     "player",
     [
         pokemons[0],
+        pokemons[1],
+        pokemons[2],
     ],
 )
 rival_trainer = Trainer(
     "rival",
     [
-        pokemons[1],
+        pokemons[3],
+        pokemons[4],
+        pokemons[5],
     ],
 )
 
@@ -374,21 +381,6 @@ def printLogs():
         print(log.name, log.user)
 
 
-def scale_sprite(sprite, scale, pos, rot=0):
-    scaled = pygame.transform.scale(
-        sprite,
-        (
-            sprite.get_width() * scale,
-            sprite.get_height() * scale,
-        ),
-    )
-    scaled = pygame.transform.rotate(scaled, rot)
-    rect = scaled.get_rect()
-    rect.x = pos[0]
-    rect.y = pos[1]
-    return (scaled, rect)
-
-
 # cycle thru moves when pressing up/down
 def inc_chosen_move(inc, co):
     co += inc
@@ -430,6 +422,7 @@ def draw_pokemon(screen):
     scaled = scale_sprite(rival.rival_img, 4, (370, 10))
     screen.blit(scaled[0], scaled[1])
 
+
 def draw_battle_text(screen, font):
     sprite = scale_sprite(box, 5, (0, 380))
     screen.blit(sprite[0], sprite[1])
@@ -442,9 +435,6 @@ def draw_battle_text(screen, font):
         ),
         (30, 410),
     )
-
-
-
 
 
 def draw_stats(screen, font):

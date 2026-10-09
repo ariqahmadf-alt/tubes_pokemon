@@ -5,6 +5,7 @@ from copy import deepcopy
 import config
 import maze
 import battle
+import selection
 
 import heapq
 from itertools import count
@@ -615,6 +616,8 @@ async def main():
                         battle.chosen_move = battle.inc_chosen_move(
                             -1, battle.chosen_move
                         )
+                    elif state == "select":
+                        selection.selected = max(selection.selected - 1, 0)
                     elif battle.battle_text == "":
                         characters[0].moving_dir = 1
                 elif event.key == pygame.K_DOWN:
@@ -622,12 +625,20 @@ async def main():
                         battle.chosen_move = battle.inc_chosen_move(
                             1, battle.chosen_move
                         )
+                    elif state == "select":
+                        selection.selected = min(selection.selected + 1, 2)
                     elif battle.battle_text == "":
                         characters[0].moving_dir = 0
-                elif event.key == pygame.K_LEFT and battle.battle_text == "":
-                    characters[0].moving_dir = 2
-                elif event.key == pygame.K_RIGHT and battle.battle_text == "":
-                    characters[0].moving_dir = 3
+                elif event.key == pygame.K_LEFT:
+                    if state == "select":
+                        selection.prev_pokemon()
+                    elif battle.battle_text == "":
+                        characters[0].moving_dir = 2
+                elif event.key == pygame.K_RIGHT:
+                    if state == "select":
+                        selection.next_pokemon()
+                    elif battle.battle_text == "":
+                        characters[0].moving_dir = 3
                 elif event.key == pygame.K_w and state == "battle":
                     battle.chosen_log = min(
                         battle.chosen_log + 1, len(battle.move_logs) - 1
@@ -638,7 +649,7 @@ async def main():
                     if state == "battle":
                         next_step()
                     elif battle.battle_text != "":
-                        state = "battle"
+                        state = "select"
                 elif event.key == pygame.K_n and state == "battle":
                     battle.showing_nodes = not battle.showing_nodes
                 elif event.key == pygame.K_m:
@@ -678,7 +689,7 @@ async def main():
 
         if state == "overworld":
             screen.fill("black")
-        elif state == "battle":
+        elif state == "battle" or state == "select":
             screen.fill("white")
 
         if state == "overworld":
@@ -719,6 +730,8 @@ async def main():
                 battle.draw_ai_brain(screen, font)
             if battle.showing_nodes:
                 battle.node_overlay(screen, font)
+        elif state == "select":
+            selection.draw(screen, font)
 
         pygame.display.flip()
         # print(pygame.mouse.get_pos())
