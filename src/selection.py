@@ -18,8 +18,25 @@ def draw(screen, font):
         screen.blit(icon[0], icon[1])
         screen.blit(
             font.render(str(player_pkmn.hp) + " HP", False, "black"),
-            (600, 10 + p * gap),
+            (450, 10 + p * gap),
         )
+
+
+def draw_pkmn_stats(screen, font):
+    scaled = scale_sprite(battle.vert_box, 8, (900 - 260, -50))
+    screen.blit(scaled[0], scaled[1])
+    this_pkmn = battle.player_trainer.pokemon[selected]
+    screen.blit(font.render(this_pkmn.moves[0].name, False, "black"), (680, 10))
+    screen.blit(font.render(str(this_pkmn.moves[0].value), False, "black"), (880, 10))
+
+    screen.blit(font.render(this_pkmn.moves[1].name, False, "black"), (680, 70))
+    screen.blit(font.render(str(this_pkmn.moves[1].value), False, "black"), (880, 70))
+
+    screen.blit(font.render(this_pkmn.moves[2].name, False, "black"), (680, 130))
+    screen.blit(font.render(str(this_pkmn.moves[2].value), False, "black"), (880, 130))
+
+    screen.blit(font.render(this_pkmn.moves[3].name, False, "black"), (680, 190))
+    screen.blit(font.render(str(this_pkmn.moves[3].value), False, "black"), (880, 190))
 
 
 def next_pokemon():

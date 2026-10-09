@@ -732,6 +732,7 @@ async def main():
                 battle.node_overlay(screen, font)
         elif state == "select":
             selection.draw(screen, font)
+            selection.draw_pkmn_stats(screen, font)
 
         pygame.display.flip()
         # print(pygame.mouse.get_pos())
