@@ -96,7 +96,7 @@ pokemons = [
         ],
     ),
     Pokemon(
-        "JIGGLYTUFF",
+        "JIGGLYPUFF",
         100,
         [
             Move("ATTACK", 5, 15),

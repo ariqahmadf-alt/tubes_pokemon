@@ -603,7 +603,7 @@ async def main():
     active_ghost = 0
     noticed = False
     font = pygame.font.Font("assets/pkmn.ttf", 24)
-    state = "overworld"
+    state = "select"
 
     while running:
         for event in pygame.event.get():
