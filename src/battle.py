@@ -96,16 +96,6 @@ pokemons = [
         ],
     ),
     Pokemon(
-        "JIGGLYPUFF",
-        100,
-        [
-            Move("ATTACK", 5, 15),
-            Move("DEFEND", 5, 15),
-            Move("HEAL", 5, 20),
-            Move("REST", -1, -1),  # -1 PP means infinite move
-        ],
-    ),
-    Pokemon(
         "JIGGLYTUFF",
         100,
         [
