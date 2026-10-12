@@ -607,7 +607,7 @@ async def main():
     active_ghost = 0
     noticed = False
     font = pygame.font.Font("assets/pkmn.ttf", 24)
-    state = "battle"
+    state = "select"
 
     while running:
         for event in pygame.event.get():
@@ -652,6 +652,13 @@ async def main():
                 elif event.key == pygame.K_SPACE:
                     if state == "battle":
                         next_step(-1)
+                    elif state == "select":
+                        if not selection.rival_chooses:
+                            # rival chooses pokemon here
+                            print("test")
+                            selection.rival_chooses = True
+                        else:
+                            state = "battle"
                     elif battle.battle_text != "":
                         state = "select"
                 elif event.key == pygame.K_n and state == "battle":

@@ -4,6 +4,7 @@ from utils import scale_sprite
 
 pkmn_icon = pygame.image.load("assets/pkmn_icon.png")
 selected = 0
+rival_chooses = False
 
 
 def draw(screen, font):
