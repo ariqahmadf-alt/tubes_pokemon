@@ -50,7 +50,7 @@ class Trainer:
 
 
 class Pokemon:
-    def __init__(self, name, hp, moves):
+    def __init__(self, name, hp, moves, element):
         self.name = name
         self.hp = hp
         self.defense = 0
@@ -59,6 +59,7 @@ class Pokemon:
         self.player_img = ""
         self.rival_img = ""
         self.idx = -1
+        self.element = element
 
     def choose_move(self, move_idx, b_text, logs, enemy):
         move = self.moves[move_idx]
@@ -84,6 +85,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "poison",
     ),
     Pokemon(
         "BLASTOISE",
@@ -94,6 +96,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "water",
     ),
     Pokemon(
         "JIGGLYTUFF",
@@ -104,6 +107,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "fairy",
     ),
     Pokemon(
         "RAPIDASH",
@@ -114,6 +118,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "fire",
     ),
     Pokemon(
         "HAUNTER",
@@ -124,6 +129,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "ghost",
     ),
     Pokemon(
         "ONYX",
@@ -134,6 +140,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "rock",
     ),
     Pokemon(
         "MEGUNIM",
@@ -144,6 +151,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "grass",
     ),
     Pokemon(
         "LUGIA",
@@ -154,6 +162,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "flying",
     ),
     Pokemon(
         "CHARIZARD",
@@ -164,6 +173,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "fire",
     ),
     Pokemon(
         "PIKACHU",
@@ -174,6 +184,7 @@ pokemons = [
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
         ],
+        "electric",
     ),
 ]
 
@@ -404,10 +415,18 @@ def draw_moves(screen, font):
 
 
 def draw_pokemon(screen):
-    scaled = scale_sprite(player.player_img, 4, (60, 132))
+    scaled = scale_sprite(player_trainer.pokemon[0].player_img, 4, (0, 0))
+    screen.blit(scaled[0], scaled[1])
+    scaled = scale_sprite(player_trainer.pokemon[1].player_img, 4, (0, 70))
+    screen.blit(scaled[0], scaled[1])
+    scaled = scale_sprite(player_trainer.pokemon[2].player_img, 4, (0, 140))
     screen.blit(scaled[0], scaled[1])
 
-    scaled = scale_sprite(rival.rival_img, 4, (370, 10))
+    scaled = scale_sprite(rival_trainer.pokemon[0].player_img, 4, (700, 0))
+    screen.blit(scaled[0], scaled[1])
+    scaled = scale_sprite(rival_trainer.pokemon[1].player_img, 4, (700, 70))
+    screen.blit(scaled[0], scaled[1])
+    scaled = scale_sprite(rival_trainer.pokemon[2].player_img, 4, (600, 140))
     screen.blit(scaled[0], scaled[1])
 
 
