@@ -607,6 +607,7 @@ async def main():
     active_ghost = 0
     noticed = False
     font = pygame.font.Font("assets/pkmn.ttf", 24)
+    stat_font = pygame.font.Font("assets/pkmn.ttf", 18)
     state = "select"
 
     while running:
@@ -683,11 +684,14 @@ async def main():
                     battle.hp_weight = 25
                     battle.def_weight = 1
                 elif event.key == pygame.K_1:
-                    next_step(0)
+                    battle.chosen_pkmn = 0
+                    battle.player = battle.player_trainer.pokemon[0]
                 elif event.key == pygame.K_2:
-                    next_step(1)
+                    battle.chosen_pkmn = 1
+                    battle.player = battle.player_trainer.pokemon[1]
                 elif event.key == pygame.K_3:
-                    next_step(2)
+                    battle.chosen_pkmn = 2
+                    battle.player = battle.player_trainer.pokemon[2]
 
             elif event.type == pygame.KEYUP:
                 # player will stop moving upon reaching its target
@@ -731,12 +735,11 @@ async def main():
             ) == abs(characters[1].pos.y):
                 noticed = True
         elif state == "battle":
-            battle.draw_pokemon(screen)
+            battle.draw_pokemon(screen, stat_font)
             if battle.turn_step != 0:
                 battle.draw_battle_text(screen, font)
             else:
                 battle.draw_moves(screen, font)
-            battle.draw_stats(screen, font)
             if battle.showing_log:
                 battle.draw_logs(screen, font)
             else:

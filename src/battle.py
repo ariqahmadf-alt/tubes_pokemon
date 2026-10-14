@@ -14,6 +14,7 @@ battle_text = ""
 chosen_log = 0
 showing_log = True
 last_rival_turn = 0
+chosen_pkmn = 0
 
 # 0 - player chooses move
 # 1 - player uses move
@@ -80,7 +81,7 @@ pokemons = [
         "KOBRA",
         100,
         [
-            Move("ATTACK", 5, 15),
+            Move("ATTACK", 4, 15),
             Move("DEFEND", 5, 15),
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
@@ -102,7 +103,7 @@ pokemons = [
         "JIGGLYTUFF",
         100,
         [
-            Move("ATTACK", 5, 15),
+            Move("ATTACK", 6, 15),
             Move("DEFEND", 5, 15),
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
@@ -414,20 +415,46 @@ def draw_moves(screen, font):
     screen.blit(font.render(chosen(3), False, "black"), (30, 530))
 
 
-def draw_pokemon(screen):
-    scaled = scale_sprite(player_trainer.pokemon[0].player_img, 4, (0, 0))
-    screen.blit(scaled[0], scaled[1])
-    scaled = scale_sprite(player_trainer.pokemon[1].player_img, 4, (0, 70))
-    screen.blit(scaled[0], scaled[1])
-    scaled = scale_sprite(player_trainer.pokemon[2].player_img, 4, (0, 140))
+def draw_pokemon(screen, font):
+    draw_player_pokemon(0, 0, 0, chosen_pkmn, screen, font)
+    draw_player_pokemon(0, 120, 1, chosen_pkmn, screen, font)
+    draw_player_pokemon(0, 240, 2, chosen_pkmn, screen, font)
+
+    draw_rival_pokemon(275, 0, 0, screen, font)
+    draw_rival_pokemon(275, 120, 1, screen, font)
+    draw_rival_pokemon(275, 240, 2, screen, font)
+
+
+def draw_player_pokemon(x, y, index, chosen_idx, screen, font):
+    is_chosen = index == chosen_idx
+
+    pokemon = player_trainer.pokemon[index]
+    scaled = scale_sprite(pokemon.player_img, 4, (x, y + 10 - is_chosen * 10))
     screen.blit(scaled[0], scaled[1])
 
-    scaled = scale_sprite(rival_trainer.pokemon[0].player_img, 4, (700, 0))
+    screen.blit(font.render(pokemon.name, False, "black"), (x + 80, y + 10))
+    screen.blit(
+        font.render(f"HP: {pokemon.hp}/{pokemon.max_hp}", False, "black"),
+        (x + 80, y + 40),
+    )
+    screen.blit(
+        font.render(f"DEF: {pokemon.defense}", False, "black"), (x + 80, y + 70)
+    )
+
+
+def draw_rival_pokemon(x, y, index, screen, font):
+    pokemon = rival_trainer.pokemon[index]
+    scaled = scale_sprite(pokemon.rival_img, 4, (x + 275, y + 10))
     screen.blit(scaled[0], scaled[1])
-    scaled = scale_sprite(rival_trainer.pokemon[1].player_img, 4, (700, 70))
-    screen.blit(scaled[0], scaled[1])
-    scaled = scale_sprite(rival_trainer.pokemon[2].player_img, 4, (600, 140))
-    screen.blit(scaled[0], scaled[1])
+
+    screen.blit(font.render(pokemon.name, False, "black"), (x + 80, y + 10))
+    screen.blit(
+        font.render(f"HP: {pokemon.hp}/{pokemon.max_hp}", False, "black"),
+        (x + 80, y + 40),
+    )
+    screen.blit(
+        font.render(f"DEF: {pokemon.defense}", False, "black"), (x + 80, y + 70)
+    )
 
 
 def draw_battle_text(screen, font):
@@ -442,18 +469,6 @@ def draw_battle_text(screen, font):
         ),
         (30, 410),
     )
-
-
-def draw_stats(screen, font):
-    screen.blit(font.render(player.name, False, "black"), (380, 250))
-    screen.blit(
-        font.render(f"HP: {player.hp}/{player.max_hp}", False, "black"), (380, 300)
-    )
-    screen.blit(font.render(f"DEF: {player.defense}", False, "black"), (380, 340))
-
-    screen.blit(font.render(rival.name, False, "black"), (70, 20))
-    screen.blit(font.render(f"HP: {rival.hp}/{rival.max_hp}", False, "black"), (70, 70))
-    screen.blit(font.render(f"DEF: {rival.defense}", False, "black"), (70, 110))
 
 
 def draw_logs(screen, font):
