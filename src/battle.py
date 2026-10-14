@@ -179,10 +179,8 @@ pokemons = [
 
 # load all pokemon images (player & rival side)
 for i in range(10):
-    pokemons[i].player_img = pygame.image.load(
-        f"assets/pokemon/pokemon_{i * 2 + 1}.png"
-    )
-    pokemons[i].rival_img = pygame.image.load(f"assets/pokemon/pokemon_{i * 2}.png")
+    pokemons[i].player_img = pygame.image.load(f"assets/pokemon/pokemon_{i}.png")
+    pokemons[i].rival_img = pygame.image.load(f"assets/pokemon/pokemon_{i}.png")
     pokemons[i].idx = i
 
 # trainer data
