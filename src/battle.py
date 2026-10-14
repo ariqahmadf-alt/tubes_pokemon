@@ -48,6 +48,7 @@ class Trainer:
     def __init__(self, name, pokemon):
         self.name = name
         self.pokemon = pokemon
+        self.chosen_enemy = -1
 
 
 class Pokemon:
@@ -420,9 +421,9 @@ def draw_pokemon(screen, font):
     draw_player_pokemon(0, 120, 1, chosen_pkmn, screen, font)
     draw_player_pokemon(0, 240, 2, chosen_pkmn, screen, font)
 
-    draw_rival_pokemon(275, 0, 0, screen, font)
-    draw_rival_pokemon(275, 120, 1, screen, font)
-    draw_rival_pokemon(275, 240, 2, screen, font)
+    draw_rival_pokemon(275, 0, 0, player_trainer.chosen_enemy, screen, font)
+    draw_rival_pokemon(275, 120, 1, player_trainer.chosen_enemy, screen, font)
+    draw_rival_pokemon(275, 240, 2, player_trainer.chosen_enemy, screen, font)
 
 
 def draw_player_pokemon(x, y, index, chosen_idx, screen, font):
@@ -442,9 +443,11 @@ def draw_player_pokemon(x, y, index, chosen_idx, screen, font):
     )
 
 
-def draw_rival_pokemon(x, y, index, screen, font):
+def draw_rival_pokemon(x, y, index, chosen_idx, screen, font):
+    is_chosen = index == chosen_idx
+
     pokemon = rival_trainer.pokemon[index]
-    scaled = scale_sprite(pokemon.rival_img, 4, (x + 275, y + 10))
+    scaled = scale_sprite(pokemon.rival_img, 4, (x + 275, y + 10 - is_chosen * 10))
     screen.blit(scaled[0], scaled[1])
 
     screen.blit(font.render(pokemon.name, False, "black"), (x + 80, y + 10))

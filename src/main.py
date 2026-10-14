@@ -563,28 +563,26 @@ def draw_points(screen):
             pygame.draw.circle(screen, col, pos, 3, 5)
 
 
-def next_step(player_change_pkmn):
+def next_step():
     can_attack = battle.player.moves[battle.chosen_move].pp != 0
-    if battle.turn_step == 0 and can_attack:
-        if player_change_pkmn == -1:
-            (battle.battle_text, battle.move_logs) = battle.player.choose_move(
-                battle.chosen_move,
-                battle.battle_text,
-                battle.move_logs,
-                battle.rival,
-            )
-        else:
-            battle.player = battle.player_trainer.pokemon[player_change_pkmn]
-            battle.battle_text = "PLAYER switched pokemon!"
+    if battle.turn_step == 0:
+        battle.turn_step += 1
+    elif battle.turn_step == 1 and can_attack:
+        (battle.battle_text, battle.move_logs) = battle.player.choose_move(
+            battle.chosen_move,
+            battle.battle_text,
+            battle.move_logs,
+            battle.rival,
+        )
         battle.turn_step += 1
         battle.last_rival_turn = len(battle.move_logs) + 1
-    elif battle.turn_step == 1:
+    elif battle.turn_step == 2:
         battle.turn_step += 1
 
         # enemy AI here
         battle.battle_text = battle.rival.name + " is thinking..."
 
-    elif battle.turn_step == 2:
+    elif battle.turn_step == 3:
         rival_move = battle.choose_rival_move(2, config.ai_type)
 
         (battle.battle_text, battle.move_logs) = battle.rival.choose_move(
@@ -594,7 +592,7 @@ def next_step(player_change_pkmn):
             battle.player,
         )
         battle.turn_step += 1
-    elif battle.turn_step == 3:
+    elif battle.turn_step == 4:
         battle.turn_step = 0
 
 
@@ -652,13 +650,16 @@ async def main():
                     battle.chosen_log = max(battle.chosen_log - 1, 0)
                 elif event.key == pygame.K_SPACE:
                     if state == "battle":
-                        next_step(-1)
+                        next_step()
                     elif state == "select":
                         if not selection.rival_chooses:
                             # rival chooses pokemon here
                             selection.choose_rival_team()
                             selection.rival_chooses = True
                         else:
+                            battle.battle_text = (
+                                "Use 1, 2, or 3 to target the enemy Pokemon!"
+                            )
                             state = "battle"
                     elif battle.battle_text != "":
                         state = "select"
@@ -684,14 +685,23 @@ async def main():
                     battle.hp_weight = 25
                     battle.def_weight = 1
                 elif event.key == pygame.K_1:
-                    battle.chosen_pkmn = 0
-                    battle.player = battle.player_trainer.pokemon[0]
+                    if battle.turn_step == 1:
+                        battle.player = battle.player_trainer.pokemon[0]
+                        battle.chosen_pkmn = 0
+                    elif battle.turn_step == 0:
+                        battle.player_trainer.chosen_enemy = 0
                 elif event.key == pygame.K_2:
-                    battle.chosen_pkmn = 1
-                    battle.player = battle.player_trainer.pokemon[1]
+                    if battle.turn_step == 1:
+                        battle.player = battle.player_trainer.pokemon[1]
+                        battle.chosen_pkmn = 1
+                    elif battle.turn_step == 0:
+                        battle.player_trainer.chosen_enemy = 1
                 elif event.key == pygame.K_3:
-                    battle.chosen_pkmn = 2
-                    battle.player = battle.player_trainer.pokemon[2]
+                    if battle.turn_step == 1:
+                        battle.player = battle.player_trainer.pokemon[2]
+                        battle.chosen_pkmn = 2
+                    elif battle.turn_step == 0:
+                        battle.player_trainer.chosen_enemy = 2
 
             elif event.type == pygame.KEYUP:
                 # player will stop moving upon reaching its target
@@ -736,7 +746,7 @@ async def main():
                 noticed = True
         elif state == "battle":
             battle.draw_pokemon(screen, stat_font)
-            if battle.turn_step != 0:
+            if battle.turn_step != 1:
                 battle.draw_battle_text(screen, font)
             else:
                 battle.draw_moves(screen, font)
