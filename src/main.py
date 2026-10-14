@@ -655,7 +655,7 @@ async def main():
                     elif state == "select":
                         if not selection.rival_chooses:
                             # rival chooses pokemon here
-                            print("test")
+                            selection.choose_rival_team()
                             selection.rival_chooses = True
                         else:
                             state = "battle"

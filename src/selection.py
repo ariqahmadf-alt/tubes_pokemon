@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pygame
 import battle
 from utils import scale_sprite
@@ -5,6 +7,65 @@ from utils import scale_sprite
 pkmn_icon = pygame.image.load("assets/pkmn_icon.png")
 selected = 0
 rival_chooses = False
+
+# This function chooses a rival team based on the player's team and the weaknesses/advantages of each Pokemon type. It reads a file containing type advantages, scores potential rival teams against the player's team, and uses a hill-climbing algorithm to find the best possible rival team. The chosen team is then assigned to the rival trainer in the battle.
+def choose_rival_team():
+    weakness_path = Path(__file__).parent / "assets" / "weaknesses.txt"
+    advantages = set()
+    with weakness_path.open(encoding="utf-8") as weakness_file:
+        for line in weakness_file:
+            if "->" not in line:
+                continue
+            stronger, weaker = (element.strip() for element in line.split("->", 1))
+            advantages.add((stronger, weaker))
+
+    player_team = battle.player_trainer.pokemon
+    team_size = len(battle.rival_trainer.pokemon)
+    candidates = [pokemon for pokemon in battle.pokemons if pokemon not in player_team]
+
+    def score(team):
+        return sum(
+            int((rival_pokemon.element, player_pokemon.element) in advantages)
+            - int((player_pokemon.element, rival_pokemon.element) in advantages)
+            for rival_pokemon in team
+            for player_pokemon in player_team
+        )
+
+    # Keep the current rival roster as the starting state when it is valid.
+    team = []
+    for pokemon in battle.rival_trainer.pokemon:
+        if pokemon in candidates and pokemon not in team:
+            team.append(pokemon)
+    for pokemon in candidates:
+        if len(team) == team_size:
+            break
+        if pokemon not in team:
+            team.append(pokemon)
+
+    # Steepest-ascent hill climbing: replace one team member with an unused
+    # candidate whenever that produces the largest matchup-score improvement.
+    while True:
+        current_score = score(team)
+        best_team = team
+        best_score = current_score
+
+        for slot in range(team_size):
+            for candidate in candidates:
+                if candidate in team:
+                    continue
+                neighbor = team.copy()
+                neighbor[slot] = candidate
+                neighbor_score = score(neighbor)
+                if neighbor_score > best_score:
+                    best_team = neighbor
+                    best_score = neighbor_score
+
+        if best_score == current_score:
+            break
+        team = best_team
+
+    battle.rival_trainer.pokemon = team
+    battle.rival = team[0]
 
 
 def draw(screen, font):
