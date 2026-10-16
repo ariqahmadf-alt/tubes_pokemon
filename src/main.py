@@ -579,10 +579,15 @@ def next_step():
     elif battle.turn_step == 2:
         battle.turn_step += 1
 
+        # AI picks best pokemon
+        battle.rival = battle.rival_trainer.pokemon[1]
+        print("enemy picks pokemon")
+
         # enemy AI here
         battle.battle_text = battle.rival.name + " is thinking..."
 
     elif battle.turn_step == 3:
+        # AI picks best move for this pokemon
         rival_move = battle.choose_rival_move(2, config.ai_type)
 
         (battle.battle_text, battle.move_logs) = battle.rival.choose_move(
