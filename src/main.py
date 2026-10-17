@@ -572,7 +572,7 @@ def next_step():
             battle.chosen_move,
             battle.battle_text,
             battle.move_logs,
-            battle.rival,
+            battle.rival_trainer.pokemon[battle.player_trainer.chosen_enemy],
         )
         battle.turn_step += 1
         battle.last_rival_turn = len(battle.move_logs) + 1
@@ -594,7 +594,7 @@ def next_step():
             rival_move,
             battle.battle_text,
             battle.move_logs,
-            battle.player,
+            battle.player_trainer.pokemon[battle.rival_trainer.chosen_enemy],
         )
         battle.turn_step += 1
     elif battle.turn_step == 4:
