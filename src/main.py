@@ -627,7 +627,9 @@ async def main():
                             -1, battle.chosen_move
                         )
                     elif state == "select":
-                        if selection.show_debug_overlay:
+                        if selection.show_csp_debug_overlay:
+                            selection.move_csp_debug_step(-1)
+                        elif selection.show_debug_overlay:
                             selection.move_debug_step(-1)
                         else:
                             selection.selected = max(selection.selected - 1, 0)
@@ -639,7 +641,9 @@ async def main():
                             1, battle.chosen_move
                         )
                     elif state == "select":
-                        if selection.show_debug_overlay:
+                        if selection.show_csp_debug_overlay:
+                            selection.move_csp_debug_step(1)
+                        elif selection.show_debug_overlay:
                             selection.move_debug_step(1)
                         else:
                             selection.selected = min(selection.selected + 1, 2)
@@ -670,8 +674,13 @@ async def main():
                             )
                     elif state == "select":
                         if not selection.rival_chooses:
-                            # rival chooses pokemon here
-                            selection.choose_rival_team()
+                            if selection.show_debug_overlay:
+                                selection.show_csp_debug_overlay = False
+                                selection.choose_rival_team_old()
+                            else:
+                                selection.show_debug_overlay = False
+                                selection.show_csp_debug_overlay = True
+                                selection.choose_rival_team()
                             selection.rival_chooses = True
                         else:
                             battle.battle_text = (
@@ -685,9 +694,15 @@ async def main():
                 elif event.key == pygame.K_m:
                     if state == "select":
                         selection.show_debug_overlay = not selection.show_debug_overlay
+                        if selection.show_debug_overlay:
+                            selection.show_csp_debug_overlay = False
                     else:
                         maze_og_toggle = not maze_og_toggle
                         battle.showing_log = not battle.showing_log
+                elif event.key == pygame.K_c and state == "select":
+                    selection.show_csp_debug_overlay = not selection.show_csp_debug_overlay
+                    if selection.show_csp_debug_overlay:
+                        selection.show_debug_overlay = False
                 elif event.key == pygame.K_k:
                     if config.ai_type == "alpha-beta":
                         config.ai_type = "minimax"
@@ -780,6 +795,7 @@ async def main():
             selection.draw(screen, font)
             selection.draw_pkmn_stats(screen, font)
             selection.draw_debug_overlay(screen)
+            selection.draw_csp_debug_overlay(screen)
 
         pygame.display.flip()
         # print(pygame.mouse.get_pos())

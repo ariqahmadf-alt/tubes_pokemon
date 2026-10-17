@@ -18,10 +18,244 @@ debug_steps = []
 debug_step_index = 0
 debug_run = None
 _debug_fonts = None
+show_csp_debug_overlay = False
+csp_debug_steps = []
+csp_debug_step_index = 0
+csp_debug_run = None
+
+def choose_rival_team():
+    global csp_debug_steps, csp_debug_step_index, csp_debug_run
+
+    weakness_path = Path(__file__).parent / "assets" / "weaknesses.txt"
+    advantages = set()
+    with weakness_path.open(encoding="utf-8") as weakness_file:
+        for line in weakness_file:
+            if "->" not in line:
+                continue
+            stronger, weaker = (element.strip() for element in line.split("->", 1))
+            advantages.add((stronger, weaker))
+
+    player_team = battle.player_trainer.pokemon
+    team_size = len(battle.rival_trainer.pokemon)
+    candidates = [pokemon for pokemon in battle.pokemons if pokemon not in player_team]
+
+    def matchup_score(pokemon):
+        return sum(
+            int((pokemon.element, player_pokemon.element) in advantages)
+            - int((player_pokemon.element, pokemon.element) in advantages)
+            for player_pokemon in player_team
+        )
+
+    candidate_scores = {pokemon: matchup_score(pokemon) for pokemon in candidates}
+    candidate_order = {pokemon: index for index, pokemon in enumerate(candidates)}
+    domains = [candidates.copy() for _ in range(team_size)]
+    neighbors = [
+        [other for other in range(team_size) if other != slot]
+        for slot in range(team_size)
+    ]
+    csp_debug_steps = []
+    csp_debug_step_index = 0
+    counters = {
+        "assignments_tried": 0,
+        "complete_assignments": 0,
+        "backtracks": 0,
+        "bound_prunes": 0,
+        "arc_checks": 0,
+        "pruned_values": 0,
+    }
+    best_assignment = None
+    best_score = None
+
+    def record(event, slot, pokemon, assignment, current_domains, detail=""):
+        csp_debug_steps.append(
+            {
+                "event": event,
+                "slot": slot,
+                "pokemon": pokemon.name if pokemon is not None else None,
+                "assignment": [
+                    assignment[index].name if index in assignment else None
+                    for index in range(team_size)
+                ],
+                "domain_sizes": [len(domain) for domain in current_domains],
+                "current_score": sum(
+                    candidate_scores[value] for value in assignment.values()
+                ),
+                "best_score": best_score,
+                "best_team": (
+                    [best_assignment[index].name for index in range(team_size)]
+                    if best_assignment is not None
+                    else []
+                ),
+                "detail": detail,
+            }
+        )
+
+    def revise(current_domains, left, right):
+        revised = False
+        for pokemon in current_domains[left].copy():
+            if not any(pokemon is not other for other in current_domains[right]):
+                current_domains[left].remove(pokemon)
+                counters["pruned_values"] += 1
+                revised = True
+        return revised
+
+    def ac3(current_domains, initial_arcs):
+        queue = list(initial_arcs)
+        queued_arcs = set(queue)
+        while queue:
+            left, right = queue.pop(0)
+            queued_arcs.remove((left, right))
+            counters["arc_checks"] += 1
+            if not revise(current_domains, left, right):
+                continue
+            if not current_domains[left]:
+                return False
+            for neighbor in neighbors[left]:
+                arc = (neighbor, left)
+                if neighbor != right and arc not in queued_arcs:
+                    queue.append(arc)
+                    queued_arcs.add(arc)
+        return True
+
+    def select_variable(assignment, current_domains):
+        unassigned = [slot for slot in range(team_size) if slot not in assignment]
+        return min(
+            unassigned,
+            key=lambda slot: (
+                len(current_domains[slot]),
+                -sum(neighbor not in assignment for neighbor in neighbors[slot]),
+                slot,
+            ),
+        )
+
+    def order_values(slot, assignment, current_domains):
+        unassigned_neighbors = [
+            neighbor
+            for neighbor in neighbors[slot]
+            if neighbor not in assignment
+        ]
+
+        def value_order(pokemon):
+            removed_options = sum(
+                pokemon in current_domains[neighbor]
+                for neighbor in unassigned_neighbors
+            )
+            return (
+                removed_options,
+                -candidate_scores[pokemon],
+                candidate_order[pokemon],
+            )
+
+        return sorted(current_domains[slot], key=value_order)
+
+    def backtrack(assignment, current_domains):
+        nonlocal best_assignment, best_score
+
+        if len(assignment) == team_size:
+            counters["complete_assignments"] += 1
+            score = sum(candidate_scores[pokemon] for pokemon in assignment.values())
+            if best_score is None or score > best_score:
+                best_assignment = assignment.copy()
+                best_score = score
+            record("SOLUTION", None, None, assignment, current_domains)
+            return
+
+        slot = select_variable(assignment, current_domains)
+        for pokemon in order_values(slot, assignment, current_domains):
+            counters["assignments_tried"] += 1
+            next_assignment = assignment.copy()
+            next_assignment[slot] = pokemon
+            next_domains = [domain.copy() for domain in current_domains]
+            next_domains[slot] = [pokemon]
+            record("ASSIGN", slot, pokemon, next_assignment, next_domains)
+
+            incoming_arcs = [(neighbor, slot) for neighbor in neighbors[slot]]
+            if not ac3(next_domains, incoming_arcs):
+                counters["backtracks"] += 1
+                record(
+                    "AC-3 FAIL",
+                    slot,
+                    pokemon,
+                    next_assignment,
+                    next_domains,
+                    "No distinct support remains for a slot.",
+                )
+                continue
+
+            remaining_slots = [
+                other for other in range(team_size) if other not in next_assignment
+            ]
+            remaining_candidates = {
+                value
+                for other in remaining_slots
+                for value in next_domains[other]
+            }
+            remaining_scores = sorted(
+                (candidate_scores[value] for value in remaining_candidates),
+                reverse=True,
+            )
+            if len(remaining_scores) < len(remaining_slots):
+                counters["backtracks"] += 1
+                record(
+                    "DOMAIN FAIL",
+                    slot,
+                    pokemon,
+                    next_assignment,
+                    next_domains,
+                    "Not enough distinct candidates remain.",
+                )
+                continue
+
+            upper_bound = sum(
+                candidate_scores[value] for value in next_assignment.values()
+            ) + sum(remaining_scores[: len(remaining_slots)])
+            if best_score is not None and upper_bound <= best_score:
+                counters["bound_prunes"] += 1
+                record(
+                    "BOUND PRUNE",
+                    slot,
+                    pokemon,
+                    next_assignment,
+                    next_domains,
+                    f"Best possible score {upper_bound:+d} cannot improve the incumbent.",
+                )
+                continue
+
+            backtrack(next_assignment, next_domains)
+
+    initial_arcs = [
+        (slot, neighbor)
+        for slot in range(team_size)
+        for neighbor in neighbors[slot]
+    ]
+    if ac3(domains, initial_arcs):
+        backtrack({}, domains)
+
+    csp_debug_run = {
+        "player": [(pokemon.name, pokemon.element) for pokemon in player_team],
+        "candidate_count": len(candidates),
+        "team_size": team_size,
+        "solution_found": best_assignment is not None,
+        "final_score": best_score,
+        "final_team": (
+            [best_assignment[slot].name for slot in range(team_size)]
+            if best_assignment is not None
+            else []
+        ),
+        **counters,
+    }
+    csp_debug_step_index = max(0, len(csp_debug_steps) - 1)
+
+    if best_assignment is not None:
+        team = [best_assignment[slot] for slot in range(team_size)]
+        battle.rival_trainer.pokemon = team
+        battle.rival = team[0]
+        return team
+    return None
 
 
 # This function chooses a rival team based on the player's team and the weaknesses/advantages of each Pokemon type. It reads a file containing type advantages, scores potential rival teams against the player's team, and uses a hill-climbing algorithm to find the best possible rival team. The chosen team is then assigned to the rival trainer in the battle.
-def choose_rival_team():
+def choose_rival_team_old():
     global debug_steps, debug_step_index, debug_run
     weakness_path = Path(__file__).parent / "assets" / "weaknesses.txt"
     advantages = set()
@@ -339,6 +573,153 @@ def draw_debug_overlay(screen):
         label(
             "No valid replacement candidates.", chart_x + 6, panel.y + 446, muted, small
         )
+
+
+def move_csp_debug_step(amount):
+    global csp_debug_step_index
+    if csp_debug_steps:
+        csp_debug_step_index = max(
+            0, min(csp_debug_step_index + amount, len(csp_debug_steps) - 1)
+        )
+
+
+def draw_csp_debug_overlay(screen):
+    if not show_csp_debug_overlay:
+        return
+
+    width, height = screen.get_size()
+    panel = pygame.Rect(20, 20, width - 40, height - 40)
+    box, rect = scale_sprite_vec2(bigbox, (4.6, 2.75), (20, 20), 0)
+    screen.blit(box, rect)
+
+    global _debug_fonts
+    if _debug_fonts is None:
+        _debug_fonts = (
+            pygame.font.Font("assets/pkmn.ttf", 24),
+            pygame.font.Font("assets/pkmn.ttf", 18),
+            pygame.font.Font("assets/pkmn.ttf", 15),
+        )
+    title_font, font, small = _debug_fonts
+    black = (0, 0, 0)
+    blue = (20, 0, 250)
+    green = (0, 150, 0)
+    gold = (150, 100, 0)
+    muted = (66, 87, 106)
+
+    def label(text, x, y, color=black, face=font, max_width=None):
+        text = str(text)
+        if max_width is not None and face.size(text)[0] > max_width:
+            while text and face.size(text + "...")[0] > max_width:
+                text = text[:-1]
+            text += "..."
+        screen.blit(face.render(text, True, color), (x, y))
+
+    left = panel.x + 26
+    right = panel.right - 26
+    label("CSP BACKTRACKING OVERLAY", left, panel.y + 19, blue, title_font)
+    pygame.draw.line(
+        screen, (66, 87, 106), (left, panel.y + 83), (right, panel.y + 83), 1
+    )
+
+    if not csp_debug_steps or csp_debug_run is None:
+        label("Press SPACE to have the rival choose a team with CSP.", left, panel.y + 116)
+        return
+
+    step = csp_debug_steps[csp_debug_step_index]
+    result = "SOLUTION FOUND" if csp_debug_run["solution_found"] else "NO SOLUTION"
+    result_color = green if csp_debug_run["solution_found"] else gold
+    final_score = csp_debug_run["final_score"]
+    score_label = f"{final_score:+d}" if final_score is not None else "-"
+    label(f"{result}  |  BEST MATCHUP SCORE {score_label}", left, panel.y + 99, result_color)
+    label(
+        f"Tried: {csp_debug_run['assignments_tried']}    Complete: "
+        f"{csp_debug_run['complete_assignments']}    Backtracks: "
+        f"{csp_debug_run['backtracks']}",
+        left,
+        panel.y + 129,
+        muted,
+        small,
+    )
+    label(
+        f"AC-3 arcs: {csp_debug_run['arc_checks']}    Values pruned: "
+        f"{csp_debug_run['pruned_values']}    Bound prunes: "
+        f"{csp_debug_run['bound_prunes']}",
+        left,
+        panel.y + 151,
+        muted,
+        small,
+    )
+    label(
+        "Player: "
+        + ", ".join(f"{name} ({element})" for name, element in csp_debug_run["player"]),
+        left,
+        panel.y + 176,
+        muted,
+        small,
+        panel.width - 52,
+    )
+    pygame.draw.line(
+        screen, (66, 87, 106), (left, panel.y + 203), (right, panel.y + 203), 1
+    )
+
+    label(
+        f"SEARCH STEP {csp_debug_step_index + 1} / {len(csp_debug_steps)}",
+        left,
+        panel.y + 216,
+        blue,
+    )
+    action = step["event"]
+    if step["slot"] is not None:
+        action += f"  |  slot {step['slot'] + 1}"
+    if step["pokemon"] is not None:
+        action += f" = {step['pokemon']}"
+    label(action, left + 275, panel.y + 218, gold if "FAIL" in action else green, small)
+    label(f"Partial score: {step['current_score']:+d}", left, panel.y + 248)
+
+    label("ASSIGNMENT / REMAINING DOMAINS", left, panel.y + 286, muted, small)
+    for slot, pokemon_name in enumerate(step["assignment"]):
+        name = pokemon_name if pokemon_name is not None else "unassigned"
+        label(
+            f"Slot {slot + 1}: {name}",
+            left + 8,
+            panel.y + 313 + slot * 31,
+            black,
+            font,
+            285,
+        )
+        label(
+            f"{step['domain_sizes'][slot]} values left",
+            left + 300,
+            panel.y + 316 + slot * 31,
+            muted,
+            small,
+        )
+
+    detail_y = panel.y + 438
+    label(step["detail"] or "MRV selects a slot; LCV orders candidates; AC-3 prunes domains.", left, detail_y, muted, small, 420)
+
+    best_x = left + 455
+    label("BEST ROSTER", best_x, panel.y + 286, muted, small)
+    if step["best_team"]:
+        for slot, pokemon_name in enumerate(step["best_team"]):
+            label(
+                f"{slot + 1}. {pokemon_name}",
+                best_x + 8,
+                panel.y + 313 + slot * 31,
+                green,
+                font,
+                right - best_x - 10,
+            )
+    else:
+        label("Searching for a complete assignment...", best_x + 8, panel.y + 313, muted, small, right - best_x - 10)
+    label(
+        f"Candidates: {csp_debug_run['candidate_count']}    Slots: {csp_debug_run['team_size']}",
+        best_x,
+        panel.y + 438,
+        muted,
+        small,
+        right - best_x,
+    )
 
 
 def draw(screen, font):
