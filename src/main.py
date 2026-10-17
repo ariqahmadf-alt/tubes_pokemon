@@ -656,6 +656,10 @@ async def main():
                 elif event.key == pygame.K_SPACE:
                     if state == "battle":
                         next_step()
+                        if battle.turn_step == 0:
+                            battle.battle_text = (
+                                "Use 1, 2, or 3 to target the enemy Pokemon!"
+                            )
                     elif state == "select":
                         if not selection.rival_chooses:
                             # rival chooses pokemon here
