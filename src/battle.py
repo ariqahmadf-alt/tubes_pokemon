@@ -5,7 +5,6 @@ from math import inf
 from utils import scale_sprite
 
 box = pygame.image.load("assets/box.png")
-bigbox = pygame.image.load("assets/bigbox.png")
 vert_box = pygame.image.load("assets/vert_box.png")
 options = pygame.image.load("assets/options.png")
 

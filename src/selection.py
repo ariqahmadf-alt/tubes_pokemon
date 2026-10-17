@@ -5,6 +5,8 @@ import battle
 from utils import scale_sprite
 from utils import scale_sprite_vec2
 
+bigbox = pygame.image.load("assets/bigbox.png")
+
 pkmn_icon = pygame.image.load("assets/pkmn_icon.png")
 selected = 0
 rival_chooses = False
@@ -145,7 +147,7 @@ def draw_debug_overlay(screen):
     # pygame.draw.rect(screen, (90, 178, 225), panel, 2, border_radius=8)
 
     # draw box
-    box, rect = scale_sprite_vec2(battle.bigbox, (4.6, 2.75), (20, 20), 0)
+    box, rect = scale_sprite_vec2(bigbox, (4.6, 2.75), (20, 20), 0)
     screen.blit(box, rect)
 
     global _debug_fonts
