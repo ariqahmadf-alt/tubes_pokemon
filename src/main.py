@@ -588,7 +588,9 @@ def next_step():
 
     elif battle.turn_step == 3:
         # AI picks best move for this pokemon
-        rival_move = battle.choose_rival_move(2, config.ai_type)
+        rival_move, rival_target = battle.choose_rival_action(2, config.ai_type)
+        battle.player = rival_target
+        battle.chosen_pkmn = battle.player_trainer.pokemon.index(rival_target)
 
         (battle.battle_text, battle.move_logs) = battle.rival.choose_move(
             rival_move,

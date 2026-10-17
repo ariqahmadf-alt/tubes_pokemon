@@ -218,6 +218,8 @@ rival_trainer = Trainer(
 player = player_trainer.pokemon[0]
 rival = rival_trainer.pokemon[0]
 
+player_trainer.pokemon[0].hp = 0
+
 
 def available_moves(pokemon):
     return [index for index, move in enumerate(pokemon.moves) if move.pp != 0]
@@ -369,47 +371,59 @@ def choose_rival_pokemon(depth=2, type="minimax"):
 
 
 def choose_rival_move(depth=2, type="minimax"):
+    return choose_rival_action(depth, type, [player])[0]
+
+
+def choose_rival_action(depth=2, type="minimax", targets=None):
+    if targets is None:
+        targets = player_trainer.pokemon
+    targets = [target for target in targets if target.hp > 0]
+
+    if not targets:
+        return 0, player
+
     best_move = 0
+    best_target = targets[0]
     best_score = -inf
     alpha = -inf
     beta = inf
 
-    for move_idx in available_moves(rival):
-        simulated_rival = deepcopy(rival)
-        simulated_player = deepcopy(player)
+    for target in targets:
+        for move_idx in available_moves(rival):
+            simulated_rival = deepcopy(rival)
+            simulated_player = deepcopy(target)
 
-        simulate_move(
-            simulated_rival,
-            simulated_player,
-            move_idx,
-        )
-
-        score = 0
-        if type == "minimax":
-            score = minimax(
+            simulate_move(
                 simulated_rival,
                 simulated_player,
-                depth - 1,
-                False,
+                move_idx,
             )
 
-        elif type == "alpha-beta":
-            score = alpha_beta(
-                simulated_rival,
-                simulated_player,
-                depth - 1,
-                alpha,
-                beta,
-                False,
-            )
+            if type == "alpha-beta":
+                score = alpha_beta(
+                    simulated_rival,
+                    simulated_player,
+                    depth - 1,
+                    alpha,
+                    beta,
+                    False,
+                )
+            else:
+                score = minimax(
+                    simulated_rival,
+                    simulated_player,
+                    depth - 1,
+                    False,
+                )
 
-        if score > best_score:
-            best_score = score
-            best_move = move_idx
+            if score > best_score:
+                best_score = score
+                best_move = move_idx
+                best_target = target
 
-        alpha = max(alpha, best_score)
+            alpha = max(alpha, best_score)
 
-    return best_move
+    return best_move, best_target
 
 
 def printLogs():
