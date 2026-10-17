@@ -674,13 +674,8 @@ async def main():
                             )
                     elif state == "select":
                         if not selection.rival_chooses:
-                            if selection.show_debug_overlay:
-                                selection.show_csp_debug_overlay = False
-                                selection.choose_rival_team_old()
-                            else:
-                                selection.show_debug_overlay = False
-                                selection.show_csp_debug_overlay = True
-                                selection.choose_rival_team()
+                            selection.choose_rival_team_old()
+                            selection.choose_rival_team()
                             selection.rival_chooses = True
                         else:
                             battle.battle_text = (
