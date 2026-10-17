@@ -218,8 +218,6 @@ rival_trainer = Trainer(
 player = player_trainer.pokemon[0]
 rival = rival_trainer.pokemon[0]
 
-player_trainer.pokemon[0].hp = 0
-
 
 def available_moves(pokemon):
     return [index for index, move in enumerate(pokemon.moves) if move.pp != 0]
