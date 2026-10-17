@@ -23,6 +23,7 @@ csp_debug_steps = []
 csp_debug_step_index = 0
 csp_debug_run = None
 
+
 def choose_rival_team():
     global csp_debug_steps, csp_debug_step_index, csp_debug_run
 
@@ -130,9 +131,7 @@ def choose_rival_team():
 
     def order_values(slot, assignment, current_domains):
         unassigned_neighbors = [
-            neighbor
-            for neighbor in neighbors[slot]
-            if neighbor not in assignment
+            neighbor for neighbor in neighbors[slot] if neighbor not in assignment
         ]
 
         def value_order(pokemon):
@@ -186,9 +185,7 @@ def choose_rival_team():
                 other for other in range(team_size) if other not in next_assignment
             ]
             remaining_candidates = {
-                value
-                for other in remaining_slots
-                for value in next_domains[other]
+                value for other in remaining_slots for value in next_domains[other]
             }
             remaining_scores = sorted(
                 (candidate_scores[value] for value in remaining_candidates),
@@ -217,16 +214,14 @@ def choose_rival_team():
                     pokemon,
                     next_assignment,
                     next_domains,
-                    f"Best possible score {upper_bound:+d} cannot improve the incumbent.",
+                    f"Best possible score {upper_bound:+d}\nCannot improve more!",
                 )
                 continue
 
             backtrack(next_assignment, next_domains)
 
     initial_arcs = [
-        (slot, neighbor)
-        for slot in range(team_size)
-        for neighbor in neighbors[slot]
+        (slot, neighbor) for slot in range(team_size) for neighbor in neighbors[slot]
     ]
     if ac3(domains, initial_arcs):
         backtrack({}, domains)
@@ -436,8 +431,7 @@ def draw_debug_overlay(screen):
         small,
     )
     label(
-        "Player: "
-        + ", ".join(f"{name} ({element})" for name, element in debug_run["player"]),
+        "Player: " + ", ".join(f" {name}" for name, element in debug_run["player"]),
         left,
         panel.y + 129,
         muted,
@@ -453,13 +447,6 @@ def draw_debug_overlay(screen):
         left,
         panel.y + 169,
         cyan,
-    )
-    label(
-        "NO IMPROVEMENT" if last_step else "IMPROVEMENT FOUND",
-        left + 300,
-        panel.y + 171,
-        gold if last_step else green,
-        small,
     )
     label(
         f"Current score: {step['score']:+d}    Best neighbor: {step['best_score']:+d}",
@@ -480,7 +467,7 @@ def draw_debug_overlay(screen):
             )
             break
         label(
-            f"{i + 1}. {name}  [{element}]",
+            f"{i + 1}. {name}",
             left + 15,
             panel.y + 269 + i * 28,
             white,
@@ -501,12 +488,12 @@ def draw_debug_overlay(screen):
     detail_y = panel.y + 437
     if step["winning_swap"] is None:
         label(
-            "No improvement - search stopped",
+            "No improvement\nSearch stopped!",
             left,
             detail_y,
             gold,
             small,
-            400,
+            999,
         )
     else:
         slot, old, new = step["winning_swap"]
@@ -529,7 +516,7 @@ def draw_debug_overlay(screen):
     chart_x = left + 440
     label("SCORE PROGRESSION", chart_x, panel.y + 242, muted, small)
     chart = pygame.Rect(chart_x + 8, panel.y + 280, max(100, right - chart_x - 22), 102)
-    pygame.draw.rect(screen, (23, 35, 51), chart, border_radius=4)
+    # pygame.draw.rect(screen, (23, 35, 51), chart, border_radius=4)
     scores = [entry["score"] for entry in debug_steps]
     lo, hi = min(scores), max(scores)
     spread = max(1, hi - lo)
@@ -622,7 +609,9 @@ def draw_csp_debug_overlay(screen):
     )
 
     if not csp_debug_steps or csp_debug_run is None:
-        label("Press SPACE to have the rival choose a team with CSP.", left, panel.y + 116)
+        label(
+            "Press SPACE to have the rival choose a team with CSP.", left, panel.y + 116
+        )
         return
 
     step = csp_debug_steps[csp_debug_step_index]
@@ -630,7 +619,12 @@ def draw_csp_debug_overlay(screen):
     result_color = green if csp_debug_run["solution_found"] else gold
     final_score = csp_debug_run["final_score"]
     score_label = f"{final_score:+d}" if final_score is not None else "-"
-    label(f"{result}  |  BEST MATCHUP SCORE {score_label}", left, panel.y + 99, result_color)
+    label(
+        f"{result}  |  BEST MATCHUP SCORE {score_label}",
+        left,
+        panel.y + 99,
+        result_color,
+    )
     label(
         f"Tried: {csp_debug_run['assignments_tried']}    Complete: "
         f"{csp_debug_run['complete_assignments']}    Backtracks: "
@@ -650,8 +644,7 @@ def draw_csp_debug_overlay(screen):
         small,
     )
     label(
-        "Player: "
-        + ", ".join(f"{name} ({element})" for name, element in csp_debug_run["player"]),
+        "Player: " + ", ".join(f" {name}" for name, element in csp_debug_run["player"]),
         left,
         panel.y + 176,
         muted,
@@ -673,7 +666,7 @@ def draw_csp_debug_overlay(screen):
         action += f"  |  slot {step['slot'] + 1}"
     if step["pokemon"] is not None:
         action += f" = {step['pokemon']}"
-    label(action, left + 275, panel.y + 218, gold if "FAIL" in action else green, small)
+    label(action, left + 400, panel.y + 218, gold if "FAIL" in action else green, small)
     label(f"Partial score: {step['current_score']:+d}", left, panel.y + 248)
 
     label("ASSIGNMENT / REMAINING DOMAINS", left, panel.y + 286, muted, small)
@@ -696,10 +689,27 @@ def draw_csp_debug_overlay(screen):
         )
 
     detail_y = panel.y + 438
-    label(step["detail"] or "MRV selects a slot; LCV orders candidates; AC-3 prunes domains.", left, detail_y, muted, small, 420)
+    if step["detail"]:
+        label(
+            step["detail"],
+            left,
+            detail_y,
+            muted,
+            font,
+            1000,
+        )
+    else:
+        label(
+            "MRV selects a slot\nLCV orders candidates\nAC-3 prunes domains",
+            left,
+            detail_y,
+            muted,
+            font,
+            100000,
+        )
 
     best_x = left + 455
-    label("BEST ROSTER", best_x, panel.y + 286, muted, small)
+    # label("BEST ROSTER", best_x, panel.y + 286, muted, small)
     if step["best_team"]:
         for slot, pokemon_name in enumerate(step["best_team"]):
             label(
@@ -711,7 +721,14 @@ def draw_csp_debug_overlay(screen):
                 right - best_x - 10,
             )
     else:
-        label("Searching for a complete assignment...", best_x + 8, panel.y + 313, muted, small, right - best_x - 10)
+        label(
+            "Searching for a complete assignment...",
+            best_x + 8,
+            panel.y + 313,
+            muted,
+            small,
+            right - best_x - 10,
+        )
     label(
         f"Candidates: {csp_debug_run['candidate_count']}    Slots: {csp_debug_run['team_size']}",
         best_x,

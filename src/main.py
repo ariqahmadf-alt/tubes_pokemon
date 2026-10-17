@@ -670,7 +670,7 @@ async def main():
                         next_step()
                         if battle.turn_step == 0:
                             battle.battle_text = (
-                                "Use 1, 2, or 3 to target the enemy Pokemon!"
+                                "Use 1, 2, or 3 to target the\nenemy Pokemon!"
                             )
                     elif state == "select":
                         if not selection.rival_chooses:
@@ -679,7 +679,7 @@ async def main():
                             selection.rival_chooses = True
                         else:
                             battle.battle_text = (
-                                "Use 1, 2, or 3 to target the enemy Pokemon!"
+                                "Use 1, 2, or 3 to target the\nenemy Pokemon!"
                             )
                             state = "battle"
                     elif battle.battle_text != "":
