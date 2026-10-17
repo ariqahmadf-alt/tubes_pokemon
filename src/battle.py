@@ -333,6 +333,41 @@ def alpha_beta(rival_state, player_state, depth, alpha, beta, maximizing):
     return best_score
 
 
+def choose_rival_pokemon(depth=2, type="minimax"):
+    best_pokemon = None
+    best_score = -inf
+
+    for candidate in rival_trainer.pokemon:
+        if candidate.hp <= 0:
+            continue
+
+        simulated_rival = deepcopy(candidate)
+        simulated_player = deepcopy(player)
+
+        if type == "alpha-beta":
+            score = alpha_beta(
+                simulated_rival,
+                simulated_player,
+                depth,
+                -inf,
+                inf,
+                True,
+            )
+        else:
+            score = minimax(
+                simulated_rival,
+                simulated_player,
+                depth,
+                True,
+            )
+
+        if score > best_score:
+            best_score = score
+            best_pokemon = candidate
+
+    return best_pokemon if best_pokemon is not None else rival
+
+
 def choose_rival_move(depth=2, type="minimax"):
     best_move = 0
     best_score = -inf
