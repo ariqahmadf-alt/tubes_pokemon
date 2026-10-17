@@ -627,7 +627,10 @@ async def main():
                             -1, battle.chosen_move
                         )
                     elif state == "select":
-                        selection.selected = max(selection.selected - 1, 0)
+                        if selection.show_debug_overlay:
+                            selection.move_debug_step(-1)
+                        else:
+                            selection.selected = max(selection.selected - 1, 0)
                     elif battle.battle_text == "":
                         characters[0].moving_dir = 1
                 elif event.key == pygame.K_DOWN:
@@ -636,7 +639,10 @@ async def main():
                             1, battle.chosen_move
                         )
                     elif state == "select":
-                        selection.selected = min(selection.selected + 1, 2)
+                        if selection.show_debug_overlay:
+                            selection.move_debug_step(1)
+                        else:
+                            selection.selected = min(selection.selected + 1, 2)
                     elif battle.battle_text == "":
                         characters[0].moving_dir = 0
                 elif event.key == pygame.K_LEFT:
@@ -677,8 +683,11 @@ async def main():
                 elif event.key == pygame.K_n and state == "battle":
                     battle.showing_nodes = not battle.showing_nodes
                 elif event.key == pygame.K_m:
-                    maze_og_toggle = not maze_og_toggle
-                    battle.showing_log = not battle.showing_log
+                    if state == "select":
+                        selection.show_debug_overlay = not selection.show_debug_overlay
+                    else:
+                        maze_og_toggle = not maze_og_toggle
+                        battle.showing_log = not battle.showing_log
                 elif event.key == pygame.K_k:
                     if config.ai_type == "alpha-beta":
                         config.ai_type = "minimax"
@@ -770,6 +779,7 @@ async def main():
         elif state == "select":
             selection.draw(screen, font)
             selection.draw_pkmn_stats(screen, font)
+            selection.draw_debug_overlay(screen)
 
         pygame.display.flip()
         # print(pygame.mouse.get_pos())
