@@ -580,7 +580,7 @@ def next_step():
         battle.turn_step += 1
 
         # AI picks best pokemon
-        battle.rival = battle.rival_trainer.pokemon[1]
+        battle.rival = battle.choose_rival_pokemon(2, config.ai_type)
         print("enemy picks pokemon")
 
         # enemy AI here
