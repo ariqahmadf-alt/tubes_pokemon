@@ -92,7 +92,7 @@ pokemons = [
         "KOBRA",
         100,
         [
-            Move("ATTACK", 4, 15),
+            Move("ATTACK", 5, 15),
             Move("DEFEND", 5, 15),
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
@@ -114,7 +114,7 @@ pokemons = [
         "JIGGLYTUFF",
         100,
         [
-            Move("ATTACK", 6, 15),
+            Move("ATTACK", 5, 15),
             Move("DEFEND", 5, 15),
             Move("HEAL", 5, 20),
             Move("REST", -1, -1),  # -1 PP means infinite move
