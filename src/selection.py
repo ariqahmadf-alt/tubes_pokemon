@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pygame
 import battle
 from utils import scale_sprite
@@ -27,23 +25,14 @@ csp_debug_run = None
 def choose_rival_team():
     global csp_debug_steps, csp_debug_step_index, csp_debug_run
 
-    weakness_path = Path(__file__).parent / "assets" / "weaknesses.txt"
-    advantages = set()
-    with weakness_path.open(encoding="utf-8") as weakness_file:
-        for line in weakness_file:
-            if "->" not in line:
-                continue
-            stronger, weaker = (element.strip() for element in line.split("->", 1))
-            advantages.add((stronger, weaker))
-
     player_team = battle.player_trainer.pokemon
     team_size = len(battle.rival_trainer.pokemon)
     candidates = [pokemon for pokemon in battle.pokemons if pokemon not in player_team]
 
     def matchup_score(pokemon):
         return sum(
-            int((pokemon.element, player_pokemon.element) in advantages)
-            - int((player_pokemon.element, pokemon.element) in advantages)
+            int((pokemon.element, player_pokemon.element) in battle.type_advantages)
+            - int((player_pokemon.element, pokemon.element) in battle.type_advantages)
             for player_pokemon in player_team
         )
 
@@ -252,14 +241,6 @@ def choose_rival_team():
 # This function chooses a rival team based on the player's team and the weaknesses/advantages of each Pokemon type. It reads a file containing type advantages, scores potential rival teams against the player's team, and uses a hill-climbing algorithm to find the best possible rival team. The chosen team is then assigned to the rival trainer in the battle.
 def choose_rival_team_old():
     global debug_steps, debug_step_index, debug_run
-    weakness_path = Path(__file__).parent / "assets" / "weaknesses.txt"
-    advantages = set()
-    with weakness_path.open(encoding="utf-8") as weakness_file:
-        for line in weakness_file:
-            if "->" not in line:
-                continue
-            stronger, weaker = (element.strip() for element in line.split("->", 1))
-            advantages.add((stronger, weaker))
 
     player_team = battle.player_trainer.pokemon
     team_size = len(battle.rival_trainer.pokemon)
@@ -267,8 +248,8 @@ def choose_rival_team_old():
 
     def score(team):
         return sum(
-            int((rival_pokemon.element, player_pokemon.element) in advantages)
-            - int((player_pokemon.element, rival_pokemon.element) in advantages)
+            int((rival_pokemon.element, player_pokemon.element) in battle.type_advantages)
+            - int((player_pokemon.element, rival_pokemon.element) in battle.type_advantages)
             for rival_pokemon in team
             for player_pokemon in player_team
         )
@@ -722,7 +703,7 @@ def draw_csp_debug_overlay(screen):
             )
     else:
         label(
-            "Searching for a complete assignment...",
+            "Searching for best team...",
             best_x + 8,
             panel.y + 313,
             muted,

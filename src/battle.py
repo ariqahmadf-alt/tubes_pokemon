@@ -2,7 +2,17 @@ import pygame
 import config
 from copy import deepcopy
 from math import inf
+from pathlib import Path
 from utils import scale_sprite
+
+weakness_path = Path(__file__).parent / "assets" / "weaknesses.txt"
+type_advantages = set()
+with weakness_path.open(encoding="utf-8") as weakness_file:
+    for line in weakness_file:
+        if "->" not in line:
+            continue
+        stronger, weaker = (element.strip() for element in line.split("->", 1))
+        type_advantages.add((stronger, weaker))
 
 box = pygame.image.load("assets/box.png")
 vert_box = pygame.image.load("assets/vert_box.png")
@@ -228,6 +238,10 @@ def simulate_move(actor, enemy, move_idx):
 
     if move_idx == 0:  # ATTACK
         damage = max(move.value - enemy.defense, 0)
+        if (actor.element, enemy.element) in type_advantages:
+            damage *= 1.5
+        elif (enemy.element, actor.element) in type_advantages:
+            damage /= 1.5
         enemy.hp = max(enemy.hp - damage, 0)
         enemy.defense = max(enemy.defense - move.value, 0)
 
