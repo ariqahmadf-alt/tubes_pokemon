@@ -2,6 +2,7 @@ import pygame
 import battle
 from utils import scale_sprite
 from utils import scale_sprite_vec2
+from copy import deepcopy
 
 bigbox = pygame.image.load("assets/bigbox.png")
 
@@ -796,12 +797,12 @@ def draw_pkmn_stats(screen, font):
 
 
 def next_pokemon():
-    battle.player_trainer.pokemon[selected] = battle.pokemons[
+    battle.player_trainer.pokemon[selected] = deepcopy(battle.pokemons[
         battle.player_trainer.pokemon[selected].idx + 1
-    ]
+    ])
 
 
 def prev_pokemon():
-    battle.player_trainer.pokemon[selected] = battle.pokemons[
+    battle.player_trainer.pokemon[selected] = deepcopy(battle.pokemons[
         battle.player_trainer.pokemon[selected].idx - 1
-    ]
+    ])
