@@ -564,7 +564,9 @@ def draw_points(screen):
 
 
 def next_step():
-    can_attack = battle.player.moves[battle.chosen_move].pp != 0
+    can_attack = (
+        battle.player.moves[battle.chosen_move].pp != 0 and battle.player.hp > 0
+    )
     if battle.turn_step == 0:
         battle.turn_step += 1
     elif battle.turn_step == 1 and can_attack:
@@ -717,22 +719,28 @@ async def main():
                     battle.hp_weight = 25
                     battle.def_weight = 1
                 elif event.key == pygame.K_1:
-                    if battle.turn_step == 1:
+                    rival_pkmn = battle.rival_trainer.pokemon
+                    player_pkmn = battle.player_trainer.pokemon
+                    if battle.turn_step == 1 and player_pkmn[0].hp > 0:
                         battle.player = battle.player_trainer.pokemon[0]
                         battle.chosen_pkmn = 0
-                    elif battle.turn_step == 0:
+                    elif battle.turn_step == 0 and rival_pkmn[0].hp > 0:
                         battle.player_trainer.chosen_enemy = 0
                 elif event.key == pygame.K_2:
-                    if battle.turn_step == 1:
+                    rival_pkmn = battle.rival_trainer.pokemon
+                    player_pkmn = battle.player_trainer.pokemon
+                    if battle.turn_step == 1 and player_pkmn[1].hp > 0:
                         battle.player = battle.player_trainer.pokemon[1]
                         battle.chosen_pkmn = 1
-                    elif battle.turn_step == 0:
+                    elif battle.turn_step == 0 and rival_pkmn[1].hp > 0:
                         battle.player_trainer.chosen_enemy = 1
                 elif event.key == pygame.K_3:
-                    if battle.turn_step == 1:
+                    rival_pkmn = battle.rival_trainer.pokemon
+                    player_pkmn = battle.player_trainer.pokemon
+                    if battle.turn_step == 1 and player_pkmn[2].hp > 0:
                         battle.player = battle.player_trainer.pokemon[2]
                         battle.chosen_pkmn = 2
-                    elif battle.turn_step == 0:
+                    elif battle.turn_step == 0 and rival_pkmn[2].hp > 0:
                         battle.player_trainer.chosen_enemy = 2
 
             elif event.type == pygame.KEYUP:
