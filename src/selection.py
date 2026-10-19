@@ -249,8 +249,14 @@ def choose_rival_team_old():
 
     def score(team):
         return sum(
-            int((rival_pokemon.element, player_pokemon.element) in battle.type_advantages)
-            - int((player_pokemon.element, rival_pokemon.element) in battle.type_advantages)
+            int(
+                (rival_pokemon.element, player_pokemon.element)
+                in battle.type_advantages
+            )
+            - int(
+                (player_pokemon.element, rival_pokemon.element)
+                in battle.type_advantages
+            )
             for rival_pokemon in team
             for player_pokemon in player_team
         )
@@ -735,7 +741,9 @@ def draw(screen, font):
         screen.blit(
             font.render(">", False, "black"), (arrow_pos, player_y + 10 + p * gap)
         )
-        icon = scale_sprite(pkmn_icon, 4, (60, player_y - 10 + p * gap))
+        icon = scale_sprite(
+            player_pkmn.pkmn_img, 1, (60, player_y - 10 + p * gap), 0, True
+        )
         screen.blit(
             font.render(player_pkmn.name, False, "black"), (160, player_y + p * gap)
         )
@@ -751,7 +759,7 @@ def draw(screen, font):
     for p in range(len(rival_pokemon)):
         rival_pkmn = rival_pokemon[p]
         arrow_pos = 40 if selected == p else 30
-        icon = scale_sprite(pkmn_icon, 4, (60, rival_y - 10 + p * gap))
+        icon = scale_sprite(rival_pkmn.pkmn_img, 1, (60, rival_y - 10 + p * gap))
         screen.blit(
             font.render(rival_pkmn.name, False, "black"), (160, rival_y + p * gap)
         )
@@ -797,12 +805,12 @@ def draw_pkmn_stats(screen, font):
 
 
 def next_pokemon():
-    battle.player_trainer.pokemon[selected] = deepcopy(battle.pokemons[
-        battle.player_trainer.pokemon[selected].idx + 1
-    ])
+    battle.player_trainer.pokemon[selected] = deepcopy(
+        battle.pokemons[battle.player_trainer.pokemon[selected].idx + 1]
+    )
 
 
 def prev_pokemon():
-    battle.player_trainer.pokemon[selected] = deepcopy(battle.pokemons[
-        battle.player_trainer.pokemon[selected].idx - 1
-    ])
+    battle.player_trainer.pokemon[selected] = deepcopy(
+        battle.pokemons[battle.player_trainer.pokemon[selected].idx - 1]
+    )

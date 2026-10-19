@@ -68,8 +68,7 @@ class Pokemon:
         self.defense = 0
         self.max_hp = hp
         self.moves = moves
-        self.player_img = ""
-        self.rival_img = ""
+        self.pkmn_img = ""
         self.idx = -1
         self.element = element
 
@@ -202,8 +201,7 @@ pokemons = [
 
 # load all pokemon images (player & rival side)
 for i in range(10):
-    pokemons[i].player_img = pygame.image.load(f"assets/pokemon/pokemon_{i}.png")
-    pokemons[i].rival_img = pygame.image.load(f"assets/pokemon/pokemon_{i}.png")
+    pokemons[i].pkmn_img = pygame.image.load(f"assets/pokemon/pokemon_{i * 2}.png")
     pokemons[i].idx = i
 
 # trainer data
@@ -491,7 +489,7 @@ def draw_player_pokemon(x, y, index, chosen_idx, screen, font):
     is_chosen = index == chosen_idx
 
     pokemon = player_trainer.pokemon[index]
-    scaled = scale_sprite(pokemon.player_img, 4, (x, y + 10 - is_chosen * 10))
+    scaled = scale_sprite(pokemon.pkmn_img, 1, (x, y + 10 - is_chosen * 10), 0, True)
     screen.blit(scaled[0], scaled[1])
 
     screen.blit(font.render(pokemon.name, False, "black"), (x + 80, y + 10))
@@ -508,7 +506,7 @@ def draw_rival_pokemon(x, y, index, chosen_idx, screen, font):
     is_chosen = index == chosen_idx
 
     pokemon = rival_trainer.pokemon[index]
-    scaled = scale_sprite(pokemon.rival_img, 4, (x + 275, y + 10 - is_chosen * 10))
+    scaled = scale_sprite(pokemon.pkmn_img, 1, (x + 275, y + 10 - is_chosen * 10))
     screen.blit(scaled[0], scaled[1])
 
     screen.blit(font.render(pokemon.name, False, "black"), (x + 80, y + 10))

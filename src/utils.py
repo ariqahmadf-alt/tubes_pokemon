@@ -1,7 +1,7 @@
 import pygame
 
 
-def scale_sprite(sprite, scale, pos, rot=0):
+def scale_sprite(sprite, scale, pos, rot=0, flipped=False):
     scaled = pygame.transform.scale(
         sprite,
         (
@@ -10,6 +10,7 @@ def scale_sprite(sprite, scale, pos, rot=0):
         ),
     )
     scaled = pygame.transform.rotate(scaled, rot)
+    scaled = pygame.transform.flip(scaled, flipped, False)
     rect = scaled.get_rect()
     rect.x = pos[0]
     rect.y = pos[1]

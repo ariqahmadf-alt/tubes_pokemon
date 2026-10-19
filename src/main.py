@@ -695,7 +695,9 @@ async def main():
                         maze_og_toggle = not maze_og_toggle
                         battle.showing_log = not battle.showing_log
                 elif event.key == pygame.K_c and state == "select":
-                    selection.show_csp_debug_overlay = not selection.show_csp_debug_overlay
+                    selection.show_csp_debug_overlay = (
+                        not selection.show_csp_debug_overlay
+                    )
                     if selection.show_csp_debug_overlay:
                         selection.show_debug_overlay = False
                 elif event.key == pygame.K_k:
