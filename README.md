@@ -1,160 +1,136 @@
-# Tugas Besar Kecerdasan Buatan — Tahap 2
+# Tugas Besar Kecerdasan Buatan — Tahap 3
 
 ## Deskripsi
 
-Proyek ini merupakan pengembangan dari Tugas Besar Kecerdasan Buatan Tahap 1 berupa simulasi lingkungan **open field berbasis grid** dengan tambahan **pertempuran turn-based**.
+Proyek ini merupakan pengembangan lanjutan dari **Tugas Besar Kecerdasan Buatan Tahap 2**, yang mengintegrasikan simulasi lingkungan **open field berbasis grid**, pertempuran **turn-based** menggunakan _adversarial search_ (Minimax & Alpha-Beta Pruning), serta penambahan sistem **Pre-Battle Drafting** otomatis untuk konfigurasi tim NPC.
 
-Sistem terdiri atas dua mode utama:
+Sistem terdiri atas tiga mode utama secara berurutan:
 
-1. **Overworld** — pemain dan NPC bergerak pada lingkungan berbasis grid. NPC menggunakan algoritma **A\*** untuk mencari jalur menuju posisi pemain setelah pemain terdeteksi.
-2. **Battle** — setelah kondisi pertemuan terpenuhi, sistem berpindah ke lingkungan pertempuran terpisah. NPC menentukan aksi menggunakan **Minimax** atau **Alpha-Beta Pruning**.
+1. **Overworld** — Pemain dan NPC bergerak pada lingkungan grid. NPC menggunakan algoritma **A\*** untuk pathfinding menuju posisi pemain.
 
-Fokus kecerdasan buatan pada Tahap 2 adalah pengambilan keputusan agen NPC dalam lingkungan pertempuran melalui **adversarial search**.
+2. **Select (Pre-Battle Drafting)** — Setelah pemain memilih 3 Pokémon, sistem secara otomatis menyusun 3 Pokémon untuk NPC dari 10 pilihan yang tersedia menggunakan dua pendekatan AI:
+   - **Local Search (Hill Climbing)**
 
-## Fitur
+   - **Constraint Satisfaction Problem (CSP)** dengan Backtracking, Heuristik (MRV, Degree, LCV), Inferensi AC-3, dan Branch-and-Bound Pruning.
 
-- Pergerakan karakter pada lingkungan grid.
-- Pathfinding NPC pada overworld menggunakan **A\*** dengan heuristik Manhattan.
-- Transisi dari overworld ke mode battle setelah NPC mendeteksi pemain.
-- Pertempuran turn-based.
-- Empat aksi battle:
-  - `ATTACK`
-  - `DEFEND`
-  - `HEAL`
-  - `REST`
-- Pengambilan keputusan NPC menggunakan:
-  - Minimax
-  - Alpha-Beta Pruning
-- Variasi kedalaman pencarian.
-- Variasi bobot fungsi evaluasi.
-- Eksperimen pengaruh urutan aksi terhadap Alpha-Beta Pruning.
-- **AI Brain** untuk menampilkan proses pengambilan keputusan NPC.
-- **Node Tree** untuk melihat struktur pencarian.
-- **Battle Log** untuk melihat riwayat aksi.
+3. **Battle** — Pertempuran turn-based di mana NPC menentukan aksi menggunakan Minimax atau Alpha-Beta Pruning, dengan tambahan modifikasi pengali keunggulan elemen (k) yang memengaruhi perhitungan _damage_.
+
+## Fitur Utama Tahap 3
+
+- **Formulasi Local Search (Hill Climbing):** Mengoptimalkan komposisi tim NPC secara iteratif berdasarkan skor keunggulan elemen V(T).
+
+- **Formulasi CSP & Backtracking:** Menelusuri ruang penugasan secara sistematis, lengkap dengan:
+  - Variabel, Domain, dan Constraint All-Different.
+
+  - Inferensi arc-consistency (**AC-3**).
+
+  - Heuristik pemilihan variabel (**MRV**, **Degree**) dan nilai (**LCV**).
+
+  - **Bound-Pruning** berdasarkan batas atas skor aditif.
+
+- **Pengali Keunggulan Elemen:** Membaca relasi dari `weaknesses.txt` (56 pasangan antarelemen dari 17 elemen) yang diterapkan pada transisi _battle_ (pengali damage 1.5x atau 1/1.5x).
+
+- **Dual Debug Overlays:** Antarmuka visual mendalam untuk meninjau langkah-langkah pencarian secara interaktif untuk kedua metode AI.
 
 ## Struktur Program
 
-```text
-tubes_pacman/
-├── main.py
-├── battle.py
-├── maze.py
-├── config.py
-├── assets/
-└── README.md
+```
+tubes_pokemon/
+├── README.md
+└── src/
+    ├── main.py
+    ├── battle.py
+    ├── selection.py
+    ├── maze.py
+    ├── config.py
+    ├── utils.py
+    └── assets/
+        └── weaknesses.txt
 ```
 
-### Fungsi utama berkas
+### Fungsi Utama Berkas
 
-| Berkas | Fungsi |
-|---|---|
-| `main.py` | Menjalankan game loop, pergerakan overworld, transisi battle, dan alur giliran. |
-| `battle.py` | Menangani state battle, aksi, simulasi state, fungsi evaluasi, Minimax, Alpha-Beta, serta debug overlay. |
-| `maze.py` | Membentuk representasi grid/graf dari peta dan hubungan antar-node. |
-| `config.py` | Menyimpan konfigurasi sistem, termasuk mode AI battle dan parameter overworld. |
-| `assets/` | Menyimpan aset visual yang digunakan oleh sistem. |
+| Berkas         | Fungsi                                                                                                                                                                |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main.py`      | Menjalankan _game loop_, navigasi overworld, transisi fase select, perulangan giliran _battle_, serta manajemen _debug overlay_.                                      |
+| `battle.py`    | Mengatur state _battle_, logika aksi (`ATTACK`, `DEFEND`, `HEAL`, `REST`), transisi _simulate_move_ dengan pengali elemen, Minimax, Alpha-Beta, serta evaluasi state. |
+| `selection.py` | Mengimplementasikan agen penyusun tim NPC (**Hill Climbing** dan **CSP** lengkap dengan AC-3, LCV, MRV, Branch-and-Bound) serta overlay visualnya.                    |
+| `maze.py`      | Membentuk representasi grid/graf dari peta dan hubungan antar-_node_.                                                                                                 |
+| `config.py`    | Menyimpan konfigurasi sistem, parameter overworld, dan jenis AI _battle_.                                                                                             |
+| `utils.py`     | Menyediakan fungsi untuk mengubah skala, rotasi, dan membalik sprite.                                                                                                  |
+| `assets/`      | Menyimpan aset visual serta berkas relasi keunggulan elemen (`weaknesses.txt`).                                                                                       |
 
-## Persyaratan
+## Persyaratan & Instalasi
 
-- Python 3
-- Pygame
+- **Python 3**
+- **Pygame**
 
 Instalasi dependensi:
 
 ```bash
-pip install pygame
+python -m pip install pygame
 ```
 
-Menjalankan program:
+Jalankan program dari folder `src` agar aset relatif seperti gambar dan font dapat ditemukan:
 
 ```bash
+cd src
 python main.py
 ```
 
-## Kontrol
+## Kontrol Permainan
 
-| Tombol | Fungsi |
-|---|---|
-| `↑ ↓ ← →` | Menggerakkan pemain / memilih aksi sesuai mode |
-| `SPACE` | Melanjutkan proses atau giliran |
-| `K` | Menampilkan informasi AI |
-| `N` | Menampilkan Node Tree |
-| `M` | Menampilkan Move Log / AI Brain |
-| `S` | Menggunakan konfigurasi fungsi evaluasi A |
-| `A` | Menggunakan konfigurasi fungsi evaluasi B |
-| `D` | Menggunakan konfigurasi fungsi evaluasi C |
-| `Q / W` | Menggulir informasi log |
-| `ESC` | Keluar dari tampilan / program |
+| Tombol      | Fungsi                                                                                                   |
+| ----------- | -------------------------------------------------------------------------------------------------------- |
+| `↑ ↓ ← →`   | Menggerakkan pemain di overworld; memilih aksi/Pokémon di menu; menelusuri langkah _debug_ di Select.    |
+| `1 / 2 / 3` | Memilih Pokémon untuk aksi atau target di _battle_.                                                       |
+| `SPACE`     | Di Select, pertama kali menjalankan pemilihan tim rival dan berikutnya masuk ke _battle_; melanjutkan giliran _battle_. |
+| `M`         | Di Select, membuka/menutup **Local Search Overlay**; di luar Select, menampilkan/menyembunyikan log _battle_ (dan mengganti tampilan peta asli di overworld). |
+| `C`         | Membuka/menutup **CSP Backtracking Overlay** di Select.                                                   |
+| `K`         | Mengganti AI _battle_ antara Minimax dan Alpha-Beta Pruning.                                              |
+| `N`         | Menampilkan/menyembunyikan struktur _Node Tree_ di _battle_.                                               |
+| `S / A / D` | Memilih bobot evaluasi _battle_: S (HP 10, DEF 2), A (HP 25, DEF 1), atau D (HP 2, DEF 15).                    |
+| `Q / W`     | Menggulir riwayat log _battle_.                                                                           |
+| `ESC`       | Keluar dari program.                                                                                      |
 
-## Model Battle
+## Pemodelan Masalah AI (Tahap 3)
 
-State battle merepresentasikan kondisi kedua agen menggunakan beberapa atribut utama:
+### 1. Local Search (Hill Climbing)
 
-- HP pemain dan NPC
-- Defense pemain dan NPC
-- PP/action availability pemain dan NPC
+- **State:** Tim NPC berupa 3 Pokémon berbeda yang bukan anggota tim pemain.
+- **Neighbour:** Mengganti satu slot Pokémon dengan satu kandidat di luar tim (3 x (m - 3) kombinasi).
+- **Fungsi Objektif:** Memaksimalkan skor keunggulan elemen V(T), yaitu jumlah nilai m(r) untuk setiap Pokémon r dalam tim T. Nilai m(r) adalah selisih keunggulan terhadap seluruh tim pemain.
+- **Aturan:** _Steepest Ascent_ tanpa _random restart_ (hanya menerima perbaikan dengan skor yang lebih tinggi).
 
-Aksi yang tersedia adalah:
+### 2. Constraint Satisfaction Problem (CSP)
 
-| Aksi | Fungsi |
-|---|---|
-| `ATTACK` | Memberikan damage kepada lawan berdasarkan nilai serangan dan Defense target. |
-| `DEFEND` | Meningkatkan Defense sehingga damage yang diterima dapat berkurang. |
-| `HEAL` | Memulihkan HP. Dalam spesifikasi tugas, aksi ini merupakan padanan dari aksi potion. |
-| `REST` | Memulihkan Power Points (PP). |
+- **Variabel (X):** X = {X1, X2, X3} (tiga slot tim NPC).
+- **Domain (D):** Daftar Pokémon di luar tim pemain.
+- **Constraint:** _All-different_ antar slot (setiap Xi berbeda dari Xj).
+- **Optimasi & Pencarian:** Backtracking dengan heuristik MRV, Degree, LCV, inferensi **AC-3**, serta **Bound-Pruning** (memangkas cabang jika batas atas skor tidak melebihi skor terbaik saat ini).
 
-NPC merupakan agen **MAX**, sedangkan pemain diperlakukan sebagai agen **MIN** dalam pencarian adversarial.
+## Hasil Eksperimen Ringkas
 
-## Minimax dan Alpha-Beta Pruning
+Berdasarkan pengujian pada 120 kombinasi tim pemain:
 
-Pada mode battle, NPC mengevaluasi kemungkinan aksi melalui game tree hingga kedalaman pencarian tertentu.
-
-Fungsi evaluasi utama menggunakan bobot HP dan Defense:
-
-```text
-E(S) = 10(HP_NPC - HP_Player)
-     + 2(Defense_NPC - Defense_Player)
-```
-
-Kondisi terminal diberi nilai utilitas yang besar untuk membedakan kondisi menang dan kalah.
-
-Konfigurasi AI battle pada program menggunakan **Alpha-Beta Pruning**, sedangkan implementasi Minimax juga tersedia untuk perbandingan eksperimen.
-
-## Eksperimen Utama
-
-Eksperimen dalam laporan membandingkan Minimax dan Alpha-Beta pada beberapa kedalaman pencarian serta variasi fungsi evaluasi dan urutan aksi.
-
-Contoh hasil pada depth 2:
-
-| Metode | Nodes | Leaves | Pruned | Aksi | Skor |
-|---|---:|---:|---:|---|---:|
-| Minimax | 21 | 16 | 0 | ATTACK | -50 |
-| Alpha-Beta | 12 | 7 | 9 | ATTACK | -50 |
-
-Hasil eksperimen menunjukkan bahwa pada state uji yang digunakan, Minimax dan Alpha-Beta menghasilkan aksi dan skor akar yang sama, sedangkan Alpha-Beta mengevaluasi lebih sedikit node.
-
-**Catatan:** waktu eksekusi tidak diukur dalam eksperimen yang dilaporkan.
-
-## Debug dan Visualisasi
-
-Sistem menyediakan beberapa tampilan untuk membantu pemeriksaan proses AI:
-
-- **AI Brain** — menampilkan aksi yang dipertimbangkan, skor, depth, dan informasi pencarian.
-- **Node Tree** — menampilkan struktur game tree.
-- **Battle Log** — menampilkan urutan aksi selama pertempuran.
+- **Optimalitas:** Baik Hill Climbing maupun CSP berhasil mencapai skor optimum pada **120 dari 120 kombinasi** (karena fungsi skor bersifat aditif sehingga tidak memiliki _local maximum_ semu).
+- **Efisiensi Biaya:**
+  - Hill Climbing rata-rata memerlukan 1.34 langkah dan mengevaluasi 28.1 _neighbour_.
+  - CSP secara konsisten mencoba hanya 18 penugasan dan mencatat 15 _bound-prunes_ (jauh lebih efisien dibandingkan enumerasi penuh sebanyak 210 kombinasi).
 
 ## Demo dan Repositori
 
-- Demo Web (GitHub Pages): https://ariqahmadf-alt.github.io/tubes_pacman/
-- Repositori Git: https://github.com/ariqahmadf-alt/tubes_pacman
-- Video Demo: https://youtu.be/6Aujp2wkP2U
+- **Demo Web (GitHub Pages):** https://ariqahmadf-alt.github.io/tubes_pokemon/
+- **Repositori Git:** https://github.com/ariqahmadf-alt/tubes_pokemon/tree/node-overlay
+- **Video Demo YouTube:** https://youtu.be/i6IImxUEIKA
 
-## Tim
+## Tim Penyusun
 
-- Ariq Ahmad Fathir — 2506752
-- Fakhri Fauzan — 2501536
-- Osman Mammedov — 2522057
+- **Ariq Ahmad Fathir** — 2506752
+- **Fakhri Fauzan** — 2501536
+- **Osman Mammedov** — 2522057
 
 **Program Studi Ilmu Komputer**  
+**Fakultas Pendidikan Matematika dan Ilmu Pengetahuan Alam**  
 **Universitas Pendidikan Indonesia**  
 **2026**
