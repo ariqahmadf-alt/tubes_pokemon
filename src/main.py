@@ -615,7 +615,7 @@ async def main():
     noticed = False
     font = pygame.font.Font("assets/pkmn.ttf", 24)
     stat_font = pygame.font.Font("assets/pkmn.ttf", 18)
-    state = "select"
+    state = "overworld"
 
     while running:
         for event in pygame.event.get():
