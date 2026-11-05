@@ -121,8 +121,8 @@ Berdasarkan pengujian pada 120 kombinasi tim pemain:
 ## Demo dan Repositori
 
 - **Demo Web (GitHub Pages):** https://ariqahmadf-alt.github.io/tubes_pokemon/
-- **Repositori Git:** https://github.com/ariqahmadf-alt/tubes_pokemon/tree/node-overlay
-- **Video Demo YouTube:** https://youtu.be/i6IImxUEIKA
+- **Repositori Git:** https://github.com/ariqahmadf-alt/tubes_pokemon/tree/csp
+- **Video Demo YouTube:** https://youtu.be/vEMODdwTfHw
 
 ## Tim Penyusun
 
