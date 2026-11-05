@@ -4,6 +4,9 @@ from copy import deepcopy
 from math import inf
 from pathlib import Path
 from utils import scale_sprite
+from knowledge_base import Atom, KnowledgeBase
+from inference_engine import InferenceEngine
+from battle_interaction import BattleInteractionHandler
 
 weakness_path = Path(__file__).parent / "assets" / "weaknesses.txt"
 type_advantages = set()
@@ -19,26 +22,31 @@ vert_box = pygame.image.load("assets/vert_box.png")
 options = pygame.image.load("assets/options.png")
 
 move_logs = []
-chosen_move = 0
 battle_text = ""
 chosen_log = 0
 showing_log = True
-last_rival_turn = 0
-chosen_pkmn = 0
-
-# 0 - player chooses move
-# 1 - player uses move
-# 2 - enemy chooses move
-# 3 - enemy uses move
-turn_step = 0
+showing_nodes = False
+showing_kb = False
+kb_trace_step = 0
+turn_count = 0
+current_agent = "NPC_A"
+battle_started = False
+battle_over = False
+battle_winner = None
+last_search = None
+last_interaction = "No interaction has been executed."
+inference_engine = InferenceEngine()
+knowledge_base = KnowledgeBase.from_json()
+interaction_handler = BattleInteractionHandler()
+inference_result = None
 
 
 class MoveLogEntry:
-    def __init__(self, move, user):
+    def __init__(self, move, user, npc_a_state, npc_b_state):
         self.move = move
         self.user = user
-        self.player = deepcopy(player)
-        self.rival = deepcopy(rival)
+        self.npc_a = deepcopy(npc_a_state)
+        self.npc_b = deepcopy(npc_b_state)
 
 
 class Move:
@@ -55,10 +63,31 @@ class Move:
 
 
 class Trainer:
-    def __init__(self, name, pokemon):
+    def __init__(self, name, pokemon, identity=None):
         self.name = name
         self.pokemon = pokemon
-        self.chosen_enemy = -1
+        self.identity = identity or name
+        self.active_index = 0
+
+    @property
+    def active(self):
+        if not self.pokemon:
+            return None
+        return self.pokemon[self.active_index]
+
+    @property
+    def is_defeated(self):
+        return not any(pokemon.hp > 0 for pokemon in self.pokemon)
+
+    def advance_active(self):
+        if not self.pokemon or self.active is None or self.active.hp > 0:
+            return False
+        for offset in range(1, len(self.pokemon) + 1):
+            index = (self.active_index + offset) % len(self.pokemon)
+            if self.pokemon[index].hp > 0:
+                self.active_index = index
+                return True
+        return False
 
 
 class Pokemon:
@@ -71,19 +100,6 @@ class Pokemon:
         self.pkmn_img = ""
         self.idx = -1
         self.element = element
-
-    def choose_move(self, move_idx, b_text, logs, enemy):
-        move = self.moves[move_idx]
-
-        simulate_move(self, enemy, move_idx)
-
-        b_text = self.name + " used " + move.name + "!\n(" + str(move.value) + ")"
-
-        move_entry = MoveLogEntry(move, self.name)
-        logs.append(move_entry)
-
-        return (b_text, logs)
-
 
 # load all 10 pokemon
 pokemons = [
@@ -199,14 +215,14 @@ pokemons = [
     ),
 ]
 
-# load all pokemon images (player & rival side)
+# Load the Pokémon sprites used by both NPC battle rosters.
 for i in range(10):
     pokemons[i].pkmn_img = pygame.image.load(f"assets/pokemon/pokemon_{i * 2}.png")
     pokemons[i].idx = i
 
-# trainer data
+# Draft data is used only by the unchanged pre-battle selection screen.
 player_trainer = Trainer(
-    "player",
+    "draft NPC A roster",
     [
         pokemons[0],
         pokemons[1],
@@ -214,7 +230,7 @@ player_trainer = Trainer(
     ],
 )
 rival_trainer = Trainer(
-    "rival",
+    "draft NPC B roster",
     [
         pokemons[3],
         pokemons[4],
@@ -222,9 +238,9 @@ rival_trainer = Trainer(
     ],
 )
 
-# the currently-active pokemon (both sides)
-player = player_trainer.pokemon[0]
 rival = rival_trainer.pokemon[0]
+npc_a_trainer = None
+npc_b_trainer = None
 
 
 def available_moves(pokemon):
@@ -257,81 +273,97 @@ def simulate_move(actor, enemy, move_idx):
         move.pp -= 1
 
 
-# 0 - 10 HP, 2 DEF
-# 1 - 25 HP, 1 DEF
-# 2 - 5 HP, 15 DEF
 hp_weight = 10
 def_weight = 2
 
 
-def evaluate(rival_state, player_state):
-    if player_state.hp <= 0:
+def _team_score(trainer):
+    return sum(
+        pokemon.hp * hp_weight
+        + (pokemon.defense * def_weight if pokemon.hp > 0 else 0)
+        for pokemon in trainer.pokemon
+    )
+
+
+def evaluate(npc_a_state, npc_b_state):
+    if npc_b_state.is_defeated:
         return 100000
 
-    if rival_state.hp <= 0:
+    if npc_a_state.is_defeated:
         return -100000
 
-    return (rival_state.hp - player_state.hp) * hp_weight + (
-        rival_state.defense - player_state.defense
-    ) * def_weight
+    return _team_score(npc_a_state) - _team_score(npc_b_state)
 
 
-def minimax(rival_state, player_state, depth, maximizing):
-    if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
-        return evaluate(rival_state, player_state)
+def _new_search_node(label, maximizing):
+    return {
+        "label": label,
+        "kind": "MAX" if maximizing else "MIN",
+        "value": None,
+        "alpha": None,
+        "beta": None,
+        "pruned": False,
+        "on_path": False,
+        "children": [],
+    }
 
-    actor = rival_state if maximizing else player_state
+
+def _search(
+    npc_a_state,
+    npc_b_state,
+    depth,
+    maximizing,
+    alpha,
+    beta,
+    pruning,
+    metrics=None,
+    node=None,
+):
+    if metrics is not None:
+        metrics["nodes"] += 1
+    if depth == 0 or npc_a_state.is_defeated or npc_b_state.is_defeated:
+        if metrics is not None:
+            metrics["leaves"] += 1
+        score = evaluate(npc_a_state, npc_b_state)
+        if node is not None:
+            node["value"] = score
+            node["alpha"] = alpha
+            node["beta"] = beta
+        return score
+
+    actor = npc_a_state if maximizing else npc_b_state
+    active = actor.active
+    moves = available_moves(active)
+    if not moves:
+        return evaluate(npc_a_state, npc_b_state)
+
     best_score = -inf if maximizing else inf
+    for move_pos, move_idx in enumerate(moves):
+        next_a = deepcopy(npc_a_state)
+        next_b = deepcopy(npc_b_state)
+        next_actor = next_a if maximizing else next_b
+        next_opponent = next_b if maximizing else next_a
+        simulate_move(next_actor.active, next_opponent.active, move_idx)
+        next_opponent.advance_active()
 
-    for move_idx in available_moves(actor):
-        next_rival = deepcopy(rival_state)
-        next_player = deepcopy(player_state)
+        child = None
+        if node is not None:
+            child = _new_search_node(
+                f"{active.name}: {active.moves[move_idx].name}", not maximizing
+            )
+            node["children"].append(child)
 
-        if maximizing:
-            simulate_move(next_rival, next_player, move_idx)
-        else:
-            simulate_move(next_player, next_rival, move_idx)
-
-        score = minimax(
-            next_rival,
-            next_player,
+        score = _search(
+            next_a,
+            next_b,
             depth - 1,
             not maximizing,
-        )
-
-        if maximizing:
-            best_score = max(best_score, score)
-        else:
-            best_score = min(best_score, score)
-
-    return best_score
-
-
-def alpha_beta(rival_state, player_state, depth, alpha, beta, maximizing):
-    if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
-        return evaluate(rival_state, player_state)
-
-    actor = rival_state if maximizing else player_state
-    best_score = -inf if maximizing else inf
-
-    for move_idx in available_moves(actor):
-        next_rival = deepcopy(rival_state)
-        next_player = deepcopy(player_state)
-
-        if maximizing:
-            simulate_move(next_rival, next_player, move_idx)
-        else:
-            simulate_move(next_player, next_rival, move_idx)
-
-        score = alpha_beta(
-            next_rival,
-            next_player,
-            depth - 1,
             alpha,
             beta,
-            not maximizing,
+            pruning,
+            metrics,
+            child,
         )
-
         if maximizing:
             best_score = max(best_score, score)
             alpha = max(alpha, best_score)
@@ -339,184 +371,402 @@ def alpha_beta(rival_state, player_state, depth, alpha, beta, maximizing):
             best_score = min(best_score, score)
             beta = min(beta, best_score)
 
-        if beta <= alpha:
+        if pruning and beta <= alpha:
+            if metrics is not None:
+                metrics["pruned"] += len(moves) - move_pos - 1
+            if node is not None:
+                for remaining_move in moves[move_pos + 1 :]:
+                    cut_node = _new_search_node(
+                        f"{active.name}: {active.moves[remaining_move].name}",
+                        not maximizing,
+                    )
+                    cut_node["pruned"] = True
+                    node["children"].append(cut_node)
             break
 
+    if node is not None:
+        node["value"] = best_score
+        node["alpha"] = alpha
+        node["beta"] = beta
     return best_score
 
 
-def choose_rival_pokemon(depth=2, type="minimax"):
-    best_pokemon = None
-    best_score = -inf
+def minimax(npc_a_state, npc_b_state, depth, maximizing=True):
+    return _search(npc_a_state, npc_b_state, depth, maximizing, -inf, inf, False)
 
-    for candidate in rival_trainer.pokemon:
-        if candidate.hp <= 0:
+
+def alpha_beta(npc_a_state, npc_b_state, depth, alpha, beta, maximizing=True):
+    return _search(
+        npc_a_state, npc_b_state, depth, maximizing, alpha, beta, True
+    )
+
+
+def _trainers_for(actor_id):
+    if actor_id == "NPC_A":
+        return npc_a_trainer, npc_b_trainer
+    if actor_id == "NPC_B":
+        return npc_b_trainer, npc_a_trainer
+    raise ValueError(f"Unknown battle agent: {actor_id}")
+
+
+def _observed_facts():
+    facts = []
+    for trainer in (npc_a_trainer, npc_b_trainer):
+        active = trainer.active
+        if active is None or active.hp <= 0:
             continue
+        identity = trainer.identity
+        usable_moves = [move for move in active.moves if move.pp != 0]
+        if active.hp <= active.max_hp * 0.3:
+            facts.append(Atom("LowHP", (identity,)))
+        if any(move.name.upper() == "ATTACK" for move in usable_moves):
+            facts.append(Atom("HasDamagingMove", (identity,)))
+        if any(
+            move.name.upper() == "ATTACK" and move.value >= 15
+            for move in usable_moves
+        ):
+            facts.append(Atom("HasHighDamagePotential", (identity,)))
+        if active.hp < active.max_hp and any(
+            move.name.upper() == "HEAL" for move in usable_moves
+        ):
+            facts.append(Atom("HasHealingMove", (identity,)))
 
-        simulated_rival = deepcopy(candidate)
-        simulated_player = deepcopy(player)
-
-        if type == "alpha-beta":
-            score = alpha_beta(
-                simulated_rival,
-                simulated_player,
-                depth,
-                -inf,
-                inf,
-                True,
-            )
-        else:
-            score = minimax(
-                simulated_rival,
-                simulated_player,
-                depth,
-                True,
-            )
-
-        if score > best_score:
-            best_score = score
-            best_pokemon = candidate
-
-    return best_pokemon if best_pokemon is not None else rival
+    active_a = npc_a_trainer.active
+    active_b = npc_b_trainer.active
+    if (
+        active_a is not None
+        and active_b is not None
+        and active_a.hp > 0
+        and active_b.hp > 0
+    ):
+        if (active_a.element, active_b.element) in type_advantages:
+            facts.append(Atom("HasTypeAdvantage", ("NPC_A", "NPC_B")))
+        if (active_b.element, active_a.element) in type_advantages:
+            facts.append(Atom("HasTypeAdvantage", ("NPC_B", "NPC_A")))
+    return facts
 
 
-def choose_rival_move(depth=2, type="minimax"):
-    return choose_rival_action(depth, type, [player])[0]
+def _refresh_inference():
+    global inference_result, kb_trace_step
+    knowledge_base.update_observations(_observed_facts())
+    inference_result = inference_engine.infer(knowledge_base)
+    kb_trace_step = 0
+    return inference_result
 
 
-def choose_rival_action(depth=2, type="minimax", targets=None):
-    if targets is None:
-        targets = player_trainer.pokemon
-    targets = [target for target in targets if target.hp > 0]
+def start_battle():
+    global player_trainer, rival_trainer, rival
+    global npc_a_trainer, npc_b_trainer, battle_started, battle_over
+    global battle_winner, current_agent, turn_count, move_logs, chosen_log
+    global last_search, last_interaction, battle_text, showing_kb, showing_nodes
 
-    if not targets:
-        return 0, player
+    if player_trainer is None or rival_trainer is None:
+        raise RuntimeError("Pre-battle rosters are unavailable.")
+    if not player_trainer.pokemon or not rival_trainer.pokemon:
+        raise ValueError("Both NPCs must have at least one Pokémon.")
 
-    best_move = 0
-    best_target = targets[0]
-    best_score = -inf
+    npc_a_trainer = Trainer(
+        "NPC A", deepcopy(player_trainer.pokemon), identity="NPC_A"
+    )
+    npc_b_trainer = Trainer(
+        "NPC B", deepcopy(rival_trainer.pokemon), identity="NPC_B"
+    )
+    player_trainer = None
+    rival_trainer = None
+    rival = None
+    battle_started = True
+    battle_over = False
+    battle_winner = None
+    current_agent = "NPC_A"
+    turn_count = 0
+    move_logs = []
+    chosen_log = 0
+    last_search = None
+    last_interaction = "No interaction has been executed."
+    showing_kb = False
+    showing_nodes = False
+    _refresh_inference()
+    battle_text = "NPC A is scheduled to act. Press SPACE to advance."
+
+
+def choose_action(actor_id, depth=2, mode="minimax", hints=()):
+    global last_search
+    actor, opponent = _trainers_for(actor_id)
+    if actor.is_defeated or opponent.is_defeated or actor.active is None:
+        return None
+
+    move_indices = available_moves(actor.active)
+    hinted_actions = {
+        hint.action
+        for hint in interaction_handler.matching_hints(
+            hints, actor_id, opponent.identity, "ATTACK"
+        )
+    }
+    hinted_actions.update(
+        hint.action
+        for hint in interaction_handler.matching_hints(
+            hints, actor_id, actor_id, "HEAL"
+        )
+    )
+    move_indices.sort(
+        key=lambda index: (
+            actor.active.moves[index].name.upper() not in hinted_actions,
+            index,
+        )
+    )
+
+    maximizing = actor_id == "NPC_A"
+    best_score = -inf if maximizing else inf
+    best_move = None
     alpha = -inf
     beta = inf
+    metrics = {"nodes": 1, "leaves": 0, "pruned": 0}
+    root = _new_search_node(
+        f"{actor.name} ({'MAX' if maximizing else 'MIN'})", maximizing
+    )
+    action_scores = []
 
-    for target in targets:
-        for move_idx in available_moves(rival):
-            simulated_rival = deepcopy(rival)
-            simulated_player = deepcopy(target)
+    for move_idx in move_indices:
+        next_a = deepcopy(npc_a_trainer)
+        next_b = deepcopy(npc_b_trainer)
+        next_actor = next_a if actor_id == "NPC_A" else next_b
+        next_opponent = next_b if actor_id == "NPC_A" else next_a
+        simulate_move(next_actor.active, next_opponent.active, move_idx)
+        next_opponent.advance_active()
 
-            simulate_move(
-                simulated_rival,
-                simulated_player,
-                move_idx,
+        child = _new_search_node(
+            f"{actor.active.name}: {actor.active.moves[move_idx].name}",
+            not maximizing,
+        )
+        root["children"].append(child)
+        next_maximizing = actor_id == "NPC_B"
+        if mode == "alpha-beta":
+            score = _search(
+                next_a,
+                next_b,
+                depth - 1,
+                next_maximizing,
+                alpha,
+                beta,
+                True,
+                metrics,
+                child,
             )
+        else:
+            score = _search(
+                next_a,
+                next_b,
+                depth - 1,
+                next_maximizing,
+                -inf,
+                inf,
+                False,
+                metrics,
+                child,
+            )
+        action_scores.append(
+            {
+                "move": move_idx,
+                "name": actor.active.moves[move_idx].name,
+                "score": score,
+            }
+        )
 
-            if type == "alpha-beta":
-                score = alpha_beta(
-                    simulated_rival,
-                    simulated_player,
-                    depth - 1,
-                    alpha,
-                    beta,
-                    False,
-                )
-            else:
-                score = minimax(
-                    simulated_rival,
-                    simulated_player,
-                    depth - 1,
-                    False,
-                )
-
-            if score > best_score:
-                best_score = score
-                best_move = move_idx
-                best_target = target
-
+        if (maximizing and score > best_score) or (
+            not maximizing and score < best_score
+        ):
+            best_score = score
+            best_move = move_idx
+        if maximizing:
             alpha = max(alpha, best_score)
+        else:
+            beta = min(beta, best_score)
 
-    return best_move, best_target
+    root["value"] = best_score
+    root["alpha"] = alpha
+    root["beta"] = beta
+    if best_move is not None:
+        chosen_name = actor.active.moves[best_move].name
+        for child in root["children"]:
+            if child["label"].endswith(chosen_name):
+                node = child
+                while node is not None:
+                    node["on_path"] = True
+                    node = next(
+                        (
+                            item
+                            for item in node["children"]
+                            if not item["pruned"]
+                            and item["value"] == node["value"]
+                        ),
+                        None,
+                    )
+                break
+
+    last_search = {
+        "actor": actor_id,
+        "mode": mode,
+        "depth": depth,
+        "action_scores": action_scores,
+        "best_move": best_move,
+        "metrics": metrics,
+        "tree": root,
+    }
+    return best_move
+
+
+def _finish_battle():
+    global battle_over, battle_winner, battle_text
+    battle_over = True
+    if npc_a_trainer.is_defeated and npc_b_trainer.is_defeated:
+        battle_winner = "Draw"
+    elif npc_a_trainer.is_defeated:
+        battle_winner = npc_b_trainer.name
+    else:
+        battle_winner = npc_a_trainer.name
+    battle_text = f"{battle_winner} wins! The battle is over."
+
+
+def advance_battle():
+    global current_agent, turn_count, battle_text, last_interaction
+
+    if not battle_started or battle_over:
+        return False
+
+    npc_a_trainer.advance_active()
+    npc_b_trainer.advance_active()
+    if npc_a_trainer.is_defeated or npc_b_trainer.is_defeated:
+        _finish_battle()
+        return False
+
+    actor, opponent = _trainers_for(current_agent)
+    result = _refresh_inference()
+    hints = interaction_handler.hints_from(result)
+    move_idx = choose_action(
+        current_agent, depth=2, mode=config.ai_type, hints=hints
+    )
+    if move_idx is None:
+        return False
+
+    user = actor.active
+    move = user.moves[move_idx]
+    target_trainer = opponent if move.name.upper() == "ATTACK" else actor
+    target = target_trainer.active
+    if user.hp <= 0 or target is None or target.hp <= 0 or move.pp == 0:
+        last_interaction = (
+            f"{actor.name}'s selected action was rejected because "
+            "the battle state no longer permits it."
+        )
+        return False
+
+    matching = interaction_handler.matching_hints(
+        hints,
+        current_agent,
+        target_trainer.identity,
+        move.name,
+    )
+    available_names = [
+        available_move.name
+        for available_move in user.moves
+        if available_move.pp != 0
+    ]
+    valid_hints = []
+    for hint in matching:
+        valid, _ = interaction_handler.validate(
+            hint,
+            current_agent,
+            target_trainer.identity,
+            move.name,
+            available_names,
+        )
+        if valid:
+            valid_hints.append(hint)
+
+    simulate_move(user, target, move_idx)
+    target_trainer.advance_active()
+    move_logs.append(MoveLogEntry(move, actor.name, npc_a_trainer, npc_b_trainer))
+    turn_count += 1
+
+    if valid_hints:
+        rules = ", ".join(sorted({hint.rule_id for hint in valid_hints}))
+        last_interaction = (
+            f"{rules} inferred {actor.name} -> {target_trainer.name}: "
+            f"{move.name}; action executed."
+        )
+    elif matching:
+        last_interaction = (
+            f"The inferred {matching[0].action} intent was invalidated; "
+            f"the search-selected {move.name} action was executed instead."
+        )
+    elif any(hint.actor == current_agent for hint in hints):
+        actor_hints = [hint for hint in hints if hint.actor == current_agent]
+        hint_summary = ", ".join(
+            sorted({f"{hint.rule_id}:{hint.action}" for hint in actor_hints})
+        )
+        last_interaction = (
+            f"KB inferred {hint_summary}; adversarial search selected {move.name} "
+            "after evaluating the strategic consequences."
+        )
+    else:
+        last_interaction = (
+            f"{actor.name}'s search-selected action was {move.name}; "
+            "no applicable inferred intent matched."
+        )
+
+    if npc_a_trainer.is_defeated or npc_b_trainer.is_defeated:
+        _finish_battle()
+        _refresh_inference()
+    else:
+        current_agent = "NPC_B" if current_agent == "NPC_A" else "NPC_A"
+        next_name = npc_a_trainer.name if current_agent == "NPC_A" else npc_b_trainer.name
+        battle_text = (
+            f"{actor.name}'s {user.name} used {move.name}.\n"
+            f"{next_name} is scheduled. Press SPACE to continue."
+        )
+        _refresh_inference()
+    return True
 
 
 def printLogs():
     for log in move_logs:
-        print(log.name, log.user)
-
-
-# cycle thru moves when pressing up/down
-def inc_chosen_move(inc, co):
-    co += inc
-    if co > 3:
-        co = 0
-    elif co < 0:
-        co = 3
-    return co
-
-
-def draw_moves(screen, font):
-    sprite = scale_sprite(box, 5, (0, 380))
-    screen.blit(sprite[0], sprite[1])
-
-    def chosen(move):
-        str = ""
-        if chosen_move == move:
-            str = ">"
-        else:
-            str = "-"
-        str += moves[move].name
-        if moves[move].pp != -1:
-            str += f"  ({moves[move].pp}/{moves[move].max_pp})"
-
-        return str
-
-    moves = player.moves
-
-    screen.blit(font.render(chosen(0), False, "black"), (30, 410))
-    screen.blit(font.render(chosen(1), False, "black"), (30, 450))
-    screen.blit(font.render(chosen(2), False, "black"), (30, 490))
-    screen.blit(font.render(chosen(3), False, "black"), (30, 530))
+        print(log.move.name, log.user)
 
 
 def draw_pokemon(screen, font):
-    draw_player_pokemon(0, 0, 0, chosen_pkmn, screen, font)
-    draw_player_pokemon(0, 120, 1, chosen_pkmn, screen, font)
-    draw_player_pokemon(0, 240, 2, chosen_pkmn, screen, font)
-
-    draw_rival_pokemon(275, 0, 0, player_trainer.chosen_enemy, screen, font)
-    draw_rival_pokemon(275, 120, 1, player_trainer.chosen_enemy, screen, font)
-    draw_rival_pokemon(275, 240, 2, player_trainer.chosen_enemy, screen, font)
+    screen.blit(font.render("NPC A", False, "black"), (20, 0))
+    screen.blit(font.render("NPC B", False, "black"), (490, 0))
+    _draw_trainer(npc_a_trainer, 0, screen, font, True)
+    _draw_trainer(npc_b_trainer, 475, screen, font, False)
 
 
-def draw_player_pokemon(x, y, index, chosen_idx, screen, font):
-    is_chosen = index == chosen_idx
-
-    pokemon = player_trainer.pokemon[index]
-    scaled = scale_sprite(pokemon.pkmn_img, 1, (x, y + 10 - is_chosen * 10), 0, True)
-    screen.blit(scaled[0], scaled[1])
-
-    screen.blit(font.render(pokemon.name, False, "black"), (x + 80, y + 10))
-    screen.blit(
-        font.render(f"HP: {pokemon.hp}/{pokemon.max_hp}", False, "black"),
-        (x + 80, y + 40),
-    )
-    screen.blit(
-        font.render(f"DEF: {pokemon.defense}", False, "black"), (x + 80, y + 70)
-    )
-
-
-def draw_rival_pokemon(x, y, index, chosen_idx, screen, font):
-    is_chosen = index == chosen_idx
-
-    pokemon = rival_trainer.pokemon[index]
-    scaled = scale_sprite(pokemon.pkmn_img, 1, (x + 275, y + 10 - is_chosen * 10))
-    screen.blit(scaled[0], scaled[1])
-
-    screen.blit(font.render(pokemon.name, False, "black"), (x + 80, y + 10))
-    screen.blit(
-        font.render(f"HP: {pokemon.hp}/{pokemon.max_hp}", False, "black"),
-        (x + 80, y + 40),
-    )
-    screen.blit(
-        font.render(f"DEF: {pokemon.defense}", False, "black"), (x + 80, y + 70)
-    )
+def _draw_trainer(trainer, x, screen, font, flip):
+    for index, pokemon in enumerate(trainer.pokemon[:3]):
+        y = 35 + index * 105
+        is_active = index == trainer.active_index
+        if is_active:
+            pygame.draw.rect(screen, (230, 240, 255), (x, y - 5, 455, 100))
+        sprite = scale_sprite(
+            pokemon.pkmn_img,
+            1,
+            (x + 5, y + 5),
+            0,
+            flip,
+        )
+        screen.blit(sprite[0], sprite[1])
+        color = "grey" if pokemon.hp <= 0 else "black"
+        marker = ">" if is_active else "-"
+        screen.blit(
+            font.render(f"{marker}{pokemon.name}", False, color),
+            (x + 80, y + 5),
+        )
+        screen.blit(
+            font.render(f"HP: {pokemon.hp:.0f}/{pokemon.max_hp}", False, color),
+            (x + 80, y + 35),
+        )
+        screen.blit(
+            font.render(f"DEF: {pokemon.defense:.0f}", False, color),
+            (x + 80, y + 65),
+        )
 
 
 def draw_battle_text(screen, font):
@@ -551,245 +801,76 @@ def draw_logs(screen, font):
             font.render(f"{i + 1}", False, "black"),
             (900 - 230, y),
         )
-        screen.blit(
-            font.render(f"{log.player.hp}", False, (0, 205, 0)),
-            (900 - 130, y),
-        )
+        npc_a_hp = sum(pokemon.hp for pokemon in log.npc_a.pokemon)
+        npc_b_hp = sum(pokemon.hp for pokemon in log.npc_b.pokemon)
+        screen.blit(font.render(f"{npc_a_hp:.0f}", False, (0, 130, 0)), (670, y))
         screen.blit(
             font.render("/", False, "black"),
-            (900 - 50, y),
+            (765, y),
+        )
+        screen.blit(font.render(f"{npc_b_hp:.0f}", False, (170, 0, 0)), (805, y))
+        npc_a_defense = sum(pokemon.defense for pokemon in log.npc_a.pokemon)
+        npc_b_defense = sum(pokemon.defense for pokemon in log.npc_b.pokemon)
+        screen.blit(
+            font.render(f"{npc_a_defense:.0f}", False, (0, 0, 150)),
+            (670, y + 40),
         )
         screen.blit(
-            font.render(f"{log.rival.hp}", False, (205, 0, 0)),
-            (900 - 10, y),
-        )
-        screen.blit(
-            font.render(f"{log.player.defense}", False, (0, 0, 205)),
-            (900 - 130, y + 40),
-        )
-        screen.blit(
-            font.render(f"{log.rival.defense}", False, (0, 0, 205)),
-            (900 - 10, y + 40),
+            font.render(f"{npc_b_defense:.0f}", False, (0, 0, 150)),
+            (805, y + 40),
         )
         text = font.render(f"{log.move.name}", False, "black")
-        side = text.get_rect(topleft=(900 - 230, y + 80))
-        if log.user == "CHARIZARD":
-            side = text.get_rect(topright=(900 + 40, y + 80))
+        side = text.get_rect(topleft=(670, y + 80))
+        if log.user == "NPC B":
+            side = text.get_rect(topright=(930, y + 80))
         screen.blit(text, side)
 
 
-# AI OVERLAY GOES HERE
+# AI OVERLAY
 def draw_ai_brain(screen, font):
     left = 625
-
     scaled = scale_sprite(vert_box, 10, (900 - 325, -50))
     screen.blit(scaled[0], scaled[1])
+    screen.blit(font.render(f"AI SEARCH - TURN {turn_count}", False, "black"), (left, 0))
+    if last_search is None:
+        screen.blit(font.render("Waiting for SPACE", False, "black"), (left, 50))
+        return
 
-    screen.blit(
-        font.render(f"AI (TURN {last_rival_turn}):", False, "black"),
-        (left, 0),
-    )
+    mode_text = "ALPHA-BETA" if last_search["mode"] == "alpha-beta" else "MINIMAX"
+    screen.blit(font.render(f"AGENT: {last_search['actor']}", False, "black"), (left, 45))
+    screen.blit(font.render(f"MODE: {mode_text}", False, "black"), (left, 80))
+    screen.blit(font.render(f"DEPTH: {last_search['depth']}", False, "black"), (left, 115))
+    screen.blit(font.render("MOVE / SCORE", False, "black"), (left, 165))
 
-    # The battle AI searches two plies in next_step().  Rebuild that same
-    # decision here so the overlay can show the moves/scores and search cost
-    # without changing the actual Minimax / Alpha-Beta implementation.
-    search_depth = 2
-    ai_mode = config.ai_type
-
-    # Once the rival has taken its move, the live Pokemon state has already
-    # changed.  The preceding player log stores the state the AI actually saw
-    # when it made that decision, so use it when available.
-    debug_player = player
-    debug_rival = rival
-    log_idx = last_rival_turn - 2
-    if 0 <= log_idx < len(move_logs):
-        debug_player = move_logs[log_idx].player
-        debug_rival = move_logs[log_idx].rival
-
-    node_count = 1  # decision/root node
-    leaf_count = 0
-    pruned_count = 0
-
-    # These traced versions intentionally mirror the current search functions.
-    # Their only extra responsibility is collecting debug statistics.
-    def traced_minimax(rival_state, player_state, depth, maximizing):
-        nonlocal node_count, leaf_count
-        node_count += 1
-
-        if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
-            leaf_count += 1
-            return evaluate(rival_state, player_state)
-
-        actor = rival_state if maximizing else player_state
-        best_score = -inf if maximizing else inf
-
-        for move_idx in available_moves(actor):
-            next_rival = deepcopy(rival_state)
-            next_player = deepcopy(player_state)
-
-            if maximizing:
-                simulate_move(next_rival, next_player, move_idx)
-            else:
-                simulate_move(next_player, next_rival, move_idx)
-
-            score = traced_minimax(
-                next_rival,
-                next_player,
-                depth - 1,
-                not maximizing,
-            )
-
-            if maximizing:
-                best_score = max(best_score, score)
-            else:
-                best_score = min(best_score, score)
-
-        return best_score
-
-    def traced_alpha_beta(
-        rival_state,
-        player_state,
-        depth,
-        alpha,
-        beta,
-        maximizing,
-    ):
-        nonlocal node_count, leaf_count, pruned_count
-        node_count += 1
-
-        if depth == 0 or rival_state.hp <= 0 or player_state.hp <= 0:
-            leaf_count += 1
-            return evaluate(rival_state, player_state)
-
-        actor = rival_state if maximizing else player_state
-        best_score = -inf if maximizing else inf
-        moves_to_check = available_moves(actor)
-        for move_pos, move_idx in enumerate(moves_to_check):
-            next_rival = deepcopy(rival_state)
-            next_player = deepcopy(player_state)
-
-            if maximizing:
-                simulate_move(next_rival, next_player, move_idx)
-            else:
-                simulate_move(next_player, next_rival, move_idx)
-
-            score = traced_alpha_beta(
-                next_rival,
-                next_player,
-                depth - 1,
-                alpha,
-                beta,
-                not maximizing,
-            )
-
-            if maximizing:
-                best_score = max(best_score, score)
-                alpha = max(alpha, best_score)
-            else:
-                best_score = min(best_score, score)
-                beta = min(beta, best_score)
-
-            if beta <= alpha:
-                pruned_count += len(moves_to_check) - move_pos - 1
-                break
-
-        return best_score
-
-    action_scores = []
-    best_move = None
-    best_score = -inf
-    alpha = -inf
-    beta = inf
-
-    for move_idx in available_moves(debug_rival):
-        simulated_rival = deepcopy(debug_rival)
-        simulated_player = deepcopy(debug_player)
-        simulate_move(simulated_rival, simulated_player, move_idx)
-
-        if ai_mode == "alpha-beta":
-            score = traced_alpha_beta(
-                simulated_rival,
-                simulated_player,
-                search_depth - 1,
-                alpha,
-                beta,
-                False,
-            )
-        else:
-            score = traced_minimax(
-                simulated_rival,
-                simulated_player,
-                search_depth - 1,
-                False,
-            )
-
-        action_scores.append((move_idx, score))
-
-        if score > best_score:
-            best_score = score
-            best_move = move_idx
-
-        # choose_rival_move() also carries the root alpha value from one
-        # candidate action to the next when Alpha-Beta is selected.
-        alpha = max(alpha, best_score)
-
-    mode_text = "A-B" if ai_mode == "alpha-beta" else "MINIMAX"
-    pruning_text = "ON" if ai_mode == "alpha-beta" else "OFF"
-
-    screen.blit(font.render(f"MODE: {mode_text}", False, "black"), (left, 45))
-    screen.blit(font.render(f"PRUNING: {pruning_text}", False, "black"), (left, 80))
-    screen.blit(font.render(f"DEPTH: {search_depth}", False, "black"), (left, 115))
-    y = 175
-
-    pygame.draw.line(screen, "black", (left, y), (925, y), 2)
-    screen.blit(font.render("MOVES / SCORE", False, "black"), (left, y + 5))
-
-    y += 50
-    for move_idx, score in action_scores:
-        prefix = ">" if move_idx == best_move else "-"
-        col = (0, 150, 0) if move_idx == best_move else "black"
+    y = 205
+    for action in last_search["action_scores"]:
+        is_best = action["move"] == last_search["best_move"]
+        prefix = ">" if is_best else "-"
+        color = (0, 140, 0) if is_best else "black"
         screen.blit(
             font.render(
-                f"{prefix}{debug_rival.moves[move_idx].name}: {score}",
+                f"{prefix}{action['name']}: {action['score']:.0f}",
                 False,
-                col,
+                color,
             ),
             (left, y),
         )
-        y += 40
+        y += 38
 
-    y += 20
-    pygame.draw.line(screen, "black", (left, y + 10), (925, y + 10), 2)
-    y += 20
-
-    screen.blit(font.render(f"NODES: {node_count}", False, "black"), (left, y))
-    y += 40
-    screen.blit(font.render(f"LEAVES: {leaf_count}", False, "black"), (left, y))
-    y += 40
-
-    if ai_mode == "alpha-beta":
+    metrics = last_search["metrics"]
+    y += 12
+    screen.blit(font.render(f"NODES: {metrics['nodes']}", False, "black"), (left, y))
+    y += 36
+    screen.blit(font.render(f"LEAVES: {metrics['leaves']}", False, "black"), (left, y))
+    y += 36
+    if last_search["mode"] == "alpha-beta":
         screen.blit(
-            font.render(f"PRUNED: {pruned_count}", False, (190, 0, 0)),
-            (left, y),
-        )
-        y += 40
-
-    if best_move is not None:
-        screen.blit(
-            font.render(
-                f"BEST: {debug_rival.moves[best_move].name}",
-                False,
-                (0, 150, 0),
-            ),
+            font.render(f"PRUNED: {metrics['pruned']}", False, (190, 0, 0)),
             (left, y),
         )
 
 
-# NODE OVERLAY GOES HERE
-# Toggle dengan tombol N (lihat main.py). Menampilkan pohon pencarian AI:
-#   root (Charizard / MAX) -> tiap move Charizard (MIN) -> tiap balasan Pikachu (leaf)
-showing_nodes = False
-_node_cache = {"key": None, "data": None}
+# Toggle with N. The tree is the exact search recorded for the last NPC action.
 _node_fonts = {}
 
 
@@ -817,113 +898,6 @@ def _fmt_bound(value):
     return _fmt_score(value)
 
 
-def _build_search_tree(rival_state, player_state, depth, mode):
-    """Rebuild keputusan AI yang sama dengan choose_rival_move(), tapi
-    setiap node disimpan sebagai dict supaya bisa digambar."""
-    prune = mode == "alpha-beta"
-
-    def new_node(label, kind):
-        return {
-            "label": label,
-            "kind": kind,  # "MAX" / "MIN"
-            "value": None,
-            "alpha": None,
-            "beta": None,
-            "pruned": False,
-            "on_path": False,
-            "children": [],
-        }
-
-    def search(rival_s, player_s, d, alpha, beta, maximizing, node):
-        if d == 0 or rival_s.hp <= 0 or player_s.hp <= 0:
-            node["value"] = evaluate(rival_s, player_s)
-            return node["value"]
-
-        actor = rival_s if maximizing else player_s
-        best = -inf if maximizing else inf
-        moves = available_moves(actor)
-
-        for pos, move_idx in enumerate(moves):
-            next_rival = deepcopy(rival_s)
-            next_player = deepcopy(player_s)
-            if maximizing:
-                simulate_move(next_rival, next_player, move_idx)
-            else:
-                simulate_move(next_player, next_rival, move_idx)
-
-            child = new_node(
-                actor.moves[move_idx].name, "MAX" if not maximizing else "MIN"
-            )
-            node["children"].append(child)
-            score = search(
-                next_rival, next_player, d - 1, alpha, beta, not maximizing, child
-            )
-
-            if maximizing:
-                best = max(best, score)
-                alpha = max(alpha, best)
-            else:
-                best = min(best, score)
-                beta = min(beta, best)
-
-            if prune and beta <= alpha:
-                # sisa cabang tidak pernah dievaluasi -> tandai sebagai pruned
-                for rest_idx in moves[pos + 1 :]:
-                    cut = new_node(
-                        actor.moves[rest_idx].name, "MAX" if not maximizing else "MIN"
-                    )
-                    cut["pruned"] = True
-                    node["children"].append(cut)
-                break
-
-        node["value"] = best
-        node["alpha"] = alpha
-        node["beta"] = beta
-        return best
-
-    root = new_node(rival_state.name, "MAX")
-    best_score = -inf
-    best_child = None
-    alpha = -inf
-    beta = inf
-
-    for move_idx in available_moves(rival_state):
-        sim_rival = deepcopy(rival_state)
-        sim_player = deepcopy(player_state)
-        simulate_move(sim_rival, sim_player, move_idx)
-
-        child = new_node(rival_state.moves[move_idx].name, "MIN")
-        root["children"].append(child)
-        if prune:
-            score = search(sim_rival, sim_player, depth - 1, alpha, beta, False, child)
-        else:
-            score = search(sim_rival, sim_player, depth - 1, -inf, inf, False, child)
-            child["alpha"] = child["beta"] = None
-
-        if score > best_score:
-            best_score = score
-            best_child = child
-        alpha = max(alpha, best_score)
-
-    root["value"] = best_score
-    root["alpha"], root["beta"] = alpha, beta
-
-    # tandai jalur terbaik (root -> move terbaik -> balasan player terbaik)
-    node = root
-    node["on_path"] = True
-    if best_child is not None:
-        node = best_child
-        while node is not None:
-            node["on_path"] = True
-            nxt = None
-            for c in node["children"]:
-                if not c["pruned"] and c["value"] == node["value"]:
-                    nxt = c
-                    break
-            node = nxt
-    return root
-
-
 def _dashed_line(screen, color, p1, p2, dash=6, gap=5, width=1):
     x1, y1 = p1
     x2, y2 = p2
@@ -948,34 +922,15 @@ def _center_text(screen, font, text, color, center):
 
 
 def node_overlay(screen, font):
-    search_depth = 2
-    ai_mode = config.ai_type
-
-    # state yang benar-benar dilihat AI saat memilih move (sama seperti draw_ai_brain)
-    debug_player = player
-    debug_rival = rival
-    log_idx = last_rival_turn - 2
-    if 0 <= log_idx < len(move_logs):
-        debug_player = move_logs[log_idx].player
-        debug_rival = move_logs[log_idx].rival
-
-    # cache supaya pohon tidak dihitung ulang 60x per detik
-    key = (
-        ai_mode,
-        last_rival_turn,
-        debug_player.hp,
-        debug_player.defense,
-        debug_rival.hp,
-        debug_rival.defense,
-        tuple(m.pp for m in debug_rival.moves),
-        tuple(m.pp for m in debug_player.moves),
-    )
-    if _node_cache["key"] != key:
-        _node_cache["key"] = key
-        _node_cache["data"] = _build_search_tree(
-            debug_rival, debug_player, search_depth, ai_mode
+    if last_search is None:
+        screen.blit(
+            _node_font(16).render("SEARCH TREE: press SPACE to advance", False, "black"),
+            (15, 15),
         )
-    root = _node_cache["data"]
+        return
+    root = last_search["tree"]
+    ai_mode = last_search["mode"]
+    search_depth = last_search["depth"]
 
     W, H = screen.get_size()
     f_big = _node_font(16)
@@ -999,7 +954,11 @@ def node_overlay(screen, font):
         "ALPHA-BETA (PRUNING)" if ai_mode == "alpha-beta" else "MINIMAX (NO PRUNING)"
     )
     screen.blit(
-        f_big.render(f"AI SEARCH TREE - TURN {last_rival_turn}", False, "black"),
+        f_big.render(
+            f"AI SEARCH TREE - TURN {turn_count} - {last_search['actor']}",
+            False,
+            "black",
+        ),
         (15, 8),
     )
     screen.blit(
@@ -1055,7 +1014,13 @@ def node_overlay(screen, font):
     # ---------- node ----------
     # root
     rx, ry = positions[id(root)]
-    _center_text(screen, f_mid, f"{root['label']} (MAX)", "black", (rx, ry - 48))
+    _center_text(
+        screen,
+        f_mid,
+        f"{root['label']} ({root['kind']})",
+        "black",
+        (rx, ry - 48),
+    )
     r_rect = pygame.Rect(0, 0, 56, 56)
     r_rect.center = (rx, ry)
     pygame.draw.rect(screen, (220, 232, 250), r_rect, border_radius=8)
@@ -1071,7 +1036,7 @@ def node_overlay(screen, font):
         edge = GREEN if on_path else (GREY if m["pruned"] else DARK)
 
         _center_text(screen, f_mid, m["label"], "black", (mx, my - 50))
-        _center_text(screen, f_small, "MIN", DARK, (mx, my - 36))
+        _center_text(screen, f_small, m["kind"], DARK, (mx, my - 36))
         pygame.draw.circle(screen, (225, 245, 230), (mx, my), 26)
         pygame.draw.circle(screen, edge, (mx, my), 26, 4 if on_path else 2)
         _center_text(screen, f_mid, _fmt_score(m["value"]), "black", (mx, my))
@@ -1127,9 +1092,207 @@ def node_overlay(screen, font):
         )
     screen.blit(
         f_small.render(
-            "GREEN: CHOSEN, DASHED/FADED: PRUNED, MOVE UNDER LEAF: PIKACHU REPLY",
+            "GREEN: CHOSEN, DASHED/FADED: PRUNED; NPC A MAXIMIZES, NPC B MINIMIZES",
             False,
             DARK,
         ),
         (15, 575),
     )
+
+
+def draw_kb_overlay(screen, font):
+    width, height = screen.get_size()
+    panel = pygame.Surface((width, height), pygame.SRCALPHA)
+    panel.fill((248, 250, 255, 242))
+    screen.blit(panel, (0, 0))
+    title_font = _node_font(17)
+    detail_font = _node_font(12)
+    muted = (75, 85, 100)
+    green = (0, 125, 45)
+    orange = (175, 95, 0)
+    blue = (25, 80, 155)
+    red = (165, 35, 35)
+
+    screen.blit(
+        title_font.render("BATTLE KNOWLEDGE BASE / INFERENCE TRACE", False, "black"),
+        (16, 8),
+    )
+    screen.blit(
+        detail_font.render(
+            "[I] CLOSE   UP/DOWN: STEP THROUGH RULE EVALUATIONS",
+            False,
+            muted,
+        ),
+        (16, 34),
+    )
+    if not battle_started or inference_result is None:
+        screen.blit(
+            detail_font.render("Battle knowledge has not been initialized.", False, muted),
+            (16, 70),
+        )
+        return
+
+    active_a = npc_a_trainer.active
+    active_b = npc_b_trainer.active
+    screen.blit(
+        detail_font.render(
+            f"NPC_A ({active_a.name if active_a else 'DEFEATED'}) "
+            f"<Opponent> NPC_B ({active_b.name if active_b else 'DEFEATED'})",
+            False,
+            blue,
+        ),
+        (16, 62),
+    )
+    scheduled = "Battle ended" if battle_over else f"{current_agent} scheduled"
+    screen.blit(
+        detail_font.render(
+            f"Turn {turn_count if battle_over else turn_count + 1} | "
+            f"{scheduled} | Waiting for SPACE: "
+            f"{'no' if battle_over else 'yes'}",
+            False,
+            muted,
+        ),
+        (16, 82),
+    )
+
+    screen.blit(title_font.render("FACTS LOADED", False, blue), (16, 112))
+    facts = list(inference_result.initial_facts)
+    left_facts = facts[: (len(facts) + 1) // 2]
+    right_facts = facts[(len(facts) + 1) // 2 :]
+    for column, column_facts in enumerate((left_facts, right_facts)):
+        x = 16 + column * 235
+        y = 138
+        for fact in column_facts:
+            if y > 320:
+                screen.blit(
+                    detail_font.render(
+                        f"... {len(column_facts) - column_facts.index(fact)} more",
+                        False,
+                        muted,
+                    ),
+                    (x, y),
+                )
+                break
+            screen.blit(detail_font.render(str(fact), False, "black"), (x, y))
+            y += 18
+
+    trace = inference_result.evaluations
+    screen.blit(title_font.render("RULE EVALUATION", False, blue), (500, 112))
+    if trace:
+        index = min(kb_trace_step, len(trace) - 1)
+        evaluation = trace[index]
+        rule_status = (
+            "MATCHED"
+            if evaluation["matched"]
+            else "CONTRADICTED"
+            if any(
+                condition["status"] in ("contradicted", "partially contradicted")
+                for condition in evaluation["conditions"]
+            )
+            else "UNKNOWN / NOT ENTAILED"
+        )
+        screen.blit(
+            detail_font.render(
+                f"Step {index + 1}/{len(trace)} | Iteration {evaluation['iteration']} | "
+                f"{evaluation['rule_id']} | {rule_status}",
+                False,
+                green
+                if evaluation["matched"]
+                else red
+                if rule_status == "CONTRADICTED"
+                else orange,
+            ),
+            (500, 138),
+        )
+        y = 160
+        for line in (evaluation["description"],):
+            screen.blit(detail_font.render(line[:54], False, muted), (500, y))
+            y += 18
+        for condition in evaluation["conditions"]:
+            state = condition["status"].upper()
+            color = (
+                green
+                if condition["status"] == "entailed"
+                else red
+                if "contradicted" in condition["status"]
+                else orange
+            )
+            screen.blit(
+                detail_font.render(
+                    f"{condition['condition']} : {state}", False, color
+                ),
+                (500, y),
+            )
+            y += 18
+            if condition["matches"]:
+                screen.blit(
+                    detail_font.render(
+                        f"  facts: {', '.join(condition['matches'])[:62]}",
+                        False,
+                        muted,
+                    ),
+                    (500, y),
+                )
+                y += 18
+            elif condition["contradictions"]:
+                screen.blit(
+                    detail_font.render(
+                        f"  contradictory fact: {condition['contradictions'][0]}",
+                        False,
+                        red,
+                    ),
+                    (500, y),
+                )
+                y += 18
+        if evaluation["substitutions"]:
+            substitution = evaluation["substitutions"][0]
+            screen.blit(
+                detail_font.render(f"Substitution: {substitution}", False, muted),
+                (500, min(y, 286)),
+            )
+    else:
+        screen.blit(
+            detail_font.render("No rules are configured.", False, orange),
+            (500, 140),
+        )
+
+    screen.blit(title_font.render("INFERRED FACTS / ACTION INTENTS", False, green), (16, 344))
+    y = 370
+    derived = inference_result.derivations
+    if not derived:
+        screen.blit(
+            detail_font.render("No new facts were entailed in this inference pass.", False, muted),
+            (16, y),
+        )
+    else:
+        for derivation in derived[:6]:
+            screen.blit(
+                detail_font.render(
+                    f"{derivation.rule_id} {dict(derivation.substitution)} "
+                    f"=> {derivation.conclusion}",
+                    False,
+                    green,
+                ),
+                (16, y),
+            )
+            y += 18
+        if len(derived) > 6:
+            screen.blit(
+                detail_font.render(f"... and {len(derived) - 6} more", False, muted),
+                (16, y),
+            )
+
+    intent_facts = [
+        fact for fact in inference_result.facts if fact.predicate == "ActionIntent"
+    ]
+    final = ", ".join(str(fact) for fact in sorted(intent_facts)) or "No ActionIntent is entailed."
+    screen.blit(
+        detail_font.render(f"Final conclusion: {final[:100]}", False, blue),
+        (16, 510),
+    )
+    screen.blit(
+        detail_font.render(f"Result: {last_interaction[:105]}", False, "black"),
+        (16, 532),
+    )
+    winner = f"Winner: {battle_winner}" if battle_over else "Winner: undecided"
+    screen.blit(detail_font.render(winner, False, blue), (16, 554))

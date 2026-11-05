@@ -1,0 +1,96 @@
+{
+  "rules": [
+    {
+      "id": "R1",
+      "description": "Pressure an aggressive opponent when their opponent is low on HP.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?target"]},
+        {"predicate": "LowHP", "args": ["?target"]},
+        {"predicate": "Aggressive", "args": ["?actor"]}
+      ],
+      "conclusion": {"predicate": "PressureOpponent", "args": ["?actor", "?target"]}
+    },
+    {
+      "id": "R2",
+      "description": "Recognize an elemental type advantage over the opponent.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?target"]},
+        {"predicate": "HasTypeAdvantage", "args": ["?actor", "?target"]}
+      ],
+      "conclusion": {"predicate": "ExploitTypeAdvantage", "args": ["?actor", "?target"]}
+    },
+    {
+      "id": "R3",
+      "description": "Recognize a finishing opportunity against a low-HP opponent.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?target"]},
+        {"predicate": "LowHP", "args": ["?target"]},
+        {"predicate": "HasHighDamagePotential", "args": ["?actor"]}
+      ],
+      "conclusion": {"predicate": "OpportunityToFinish", "args": ["?actor", "?target"]}
+    },
+    {
+      "id": "R4",
+      "description": "Recognize an exploitable status effect on the opponent.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?target"]},
+        {"predicate": "UnderStatusEffect", "args": ["?target"]}
+      ],
+      "conclusion": {"predicate": "ExploitOpponentStatus", "args": ["?actor", "?target"]}
+    },
+    {
+      "id": "R5",
+      "description": "Consider healing oneself when low on HP and a healing move is available.",
+      "conditions": [
+        {"predicate": "LowHP", "args": ["?actor"]},
+        {"predicate": "HasHealingMove", "args": ["?actor"]}
+      ],
+      "conclusion": {"predicate": "ConsiderSelfHealing", "args": ["?actor"]}
+    },
+    {
+      "id": "R6",
+      "description": "Convert opponent pressure into a legal attack intent.",
+      "conditions": [
+        {"predicate": "PressureOpponent", "args": ["?actor", "?target"]},
+        {"predicate": "HasDamagingMove", "args": ["?actor"]}
+      ],
+      "conclusion": {"predicate": "ActionIntent", "args": ["?actor", "?target", "ATTACK"]}
+    },
+    {
+      "id": "R7",
+      "description": "Convert a known type advantage into a legal attack intent.",
+      "conditions": [
+        {"predicate": "ExploitTypeAdvantage", "args": ["?actor", "?target"]},
+        {"predicate": "HasDamagingMove", "args": ["?actor"]}
+      ],
+      "conclusion": {"predicate": "ActionIntent", "args": ["?actor", "?target", "ATTACK"]}
+    },
+    {
+      "id": "R8",
+      "description": "Convert a finishing opportunity into a legal attack intent.",
+      "conditions": [
+        {"predicate": "OpportunityToFinish", "args": ["?actor", "?target"]},
+        {"predicate": "HasDamagingMove", "args": ["?actor"]}
+      ],
+      "conclusion": {"predicate": "ActionIntent", "args": ["?actor", "?target", "ATTACK"]}
+    },
+    {
+      "id": "R9",
+      "description": "Convert an exploitable status condition into a legal attack intent.",
+      "conditions": [
+        {"predicate": "ExploitOpponentStatus", "args": ["?actor", "?target"]},
+        {"predicate": "HasDamagingMove", "args": ["?actor"]}
+      ],
+      "conclusion": {"predicate": "ActionIntent", "args": ["?actor", "?target", "ATTACK"]}
+    },
+    {
+      "id": "R10",
+      "description": "Convert self-healing consideration into a legal heal intent.",
+      "conditions": [
+        {"predicate": "ConsiderSelfHealing", "args": ["?actor"]},
+        {"predicate": "HasHealingMove", "args": ["?actor"]}
+      ],
+      "conclusion": {"predicate": "ActionIntent", "args": ["?actor", "?actor", "HEAL"]}
+    }
+  ]
+}

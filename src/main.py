@@ -564,45 +564,7 @@ def draw_points(screen):
 
 
 def next_step():
-    can_attack = (
-        battle.player.moves[battle.chosen_move].pp != 0 and battle.player.hp > 0
-    )
-    if battle.turn_step == 0:
-        battle.turn_step += 1
-    elif battle.turn_step == 1 and can_attack:
-        (battle.battle_text, battle.move_logs) = battle.player.choose_move(
-            battle.chosen_move,
-            battle.battle_text,
-            battle.move_logs,
-            battle.rival_trainer.pokemon[battle.player_trainer.chosen_enemy],
-        )
-        battle.turn_step += 1
-        battle.last_rival_turn = len(battle.move_logs) + 1
-    elif battle.turn_step == 2:
-        battle.turn_step += 1
-
-        # AI picks best pokemon
-        battle.rival = battle.choose_rival_pokemon(2, config.ai_type)
-        print("enemy picks pokemon")
-
-        # enemy AI here
-        battle.battle_text = battle.rival.name + " is thinking..."
-
-    elif battle.turn_step == 3:
-        # AI picks best move for this pokemon
-        rival_move, rival_target = battle.choose_rival_action(2, config.ai_type)
-        battle.player = rival_target
-        battle.chosen_pkmn = battle.player_trainer.pokemon.index(rival_target)
-
-        (battle.battle_text, battle.move_logs) = battle.rival.choose_move(
-            rival_move,
-            battle.battle_text,
-            battle.move_logs,
-            battle.player_trainer.pokemon[battle.rival_trainer.chosen_enemy],
-        )
-        battle.turn_step += 1
-    elif battle.turn_step == 4:
-        battle.turn_step = 0
+    battle.advance_battle()
 
 
 async def main():
@@ -622,12 +584,12 @@ async def main():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
-                # register arrow keys as player movement
                 if event.key == pygame.K_UP:
                     if state == "battle":
-                        battle.chosen_move = battle.inc_chosen_move(
-                            -1, battle.chosen_move
-                        )
+                        if battle.showing_kb and battle.inference_result:
+                            battle.kb_trace_step = max(
+                                battle.kb_trace_step - 1, 0
+                            )
                     elif state == "select":
                         if selection.show_csp_debug_overlay:
                             selection.move_csp_debug_step(-1)
@@ -635,13 +597,15 @@ async def main():
                             selection.move_debug_step(-1)
                         else:
                             selection.selected = max(selection.selected - 1, 0)
-                    elif battle.battle_text == "":
+                    elif state == "overworld" and battle.battle_text == "":
                         characters[0].moving_dir = 1
                 elif event.key == pygame.K_DOWN:
                     if state == "battle":
-                        battle.chosen_move = battle.inc_chosen_move(
-                            1, battle.chosen_move
-                        )
+                        if battle.showing_kb and battle.inference_result:
+                            battle.kb_trace_step = min(
+                                battle.kb_trace_step + 1,
+                                max(len(battle.inference_result.evaluations) - 1, 0),
+                            )
                     elif state == "select":
                         if selection.show_csp_debug_overlay:
                             selection.move_csp_debug_step(1)
@@ -649,43 +613,47 @@ async def main():
                             selection.move_debug_step(1)
                         else:
                             selection.selected = min(selection.selected + 1, 2)
-                    elif battle.battle_text == "":
+                    elif state == "overworld" and battle.battle_text == "":
                         characters[0].moving_dir = 0
                 elif event.key == pygame.K_LEFT:
                     if state == "select":
                         selection.prev_pokemon()
-                    elif battle.battle_text == "":
+                    elif state == "overworld" and battle.battle_text == "":
                         characters[0].moving_dir = 2
                 elif event.key == pygame.K_RIGHT:
                     if state == "select":
                         selection.next_pokemon()
-                    elif battle.battle_text == "":
+                    elif state == "overworld" and battle.battle_text == "":
                         characters[0].moving_dir = 3
-                elif event.key == pygame.K_w and state == "battle":
+                elif (
+                    event.key == pygame.K_w
+                    and state == "battle"
+                    and battle.move_logs
+                ):
                     battle.chosen_log = min(
                         battle.chosen_log + 1, len(battle.move_logs) - 1
                     )
-                elif event.key == pygame.K_q and state == "battle":
+                elif (
+                    event.key == pygame.K_q
+                    and state == "battle"
+                    and battle.move_logs
+                ):
                     battle.chosen_log = max(battle.chosen_log - 1, 0)
                 elif event.key == pygame.K_SPACE:
                     if state == "battle":
                         next_step()
-                        if battle.turn_step == 0:
-                            battle.battle_text = (
-                                "Use 1, 2, or 3 to target the\nenemy Pokemon!"
-                            )
                     elif state == "select":
                         if not selection.rival_chooses:
                             selection.choose_rival_team_old()
                             selection.choose_rival_team()
                             selection.rival_chooses = True
                         else:
-                            battle.battle_text = (
-                                "Use 1, 2, or 3 to target the\nenemy Pokemon!"
-                            )
+                            battle.start_battle()
                             state = "battle"
                     elif battle.battle_text != "":
                         state = "select"
+                elif event.key == pygame.K_i and state == "battle":
+                    battle.showing_kb = not battle.showing_kb
                 elif event.key == pygame.K_n and state == "battle":
                     battle.showing_nodes = not battle.showing_nodes
                 elif event.key == pygame.K_m:
@@ -702,56 +670,16 @@ async def main():
                     )
                     if selection.show_csp_debug_overlay:
                         selection.show_debug_overlay = False
-                elif event.key == pygame.K_k:
-                    if config.ai_type == "alpha-beta":
-                        config.ai_type = "minimax"
-                    else:
-                        config.ai_type = "alpha-beta"
                 elif event.key == pygame.K_ESCAPE:
                     running = False
-                elif event.key == pygame.K_d:
-                    battle.hp_weight = 2
-                    battle.def_weight = 15
-                elif event.key == pygame.K_s:
-                    battle.hp_weight = 10
-                    battle.def_weight = 2
-                elif event.key == pygame.K_a:
-                    battle.hp_weight = 25
-                    battle.def_weight = 1
-                elif event.key == pygame.K_1:
-                    rival_pkmn = battle.rival_trainer.pokemon
-                    player_pkmn = battle.player_trainer.pokemon
-                    if battle.turn_step == 1 and player_pkmn[0].hp > 0:
-                        battle.player = battle.player_trainer.pokemon[0]
-                        battle.chosen_pkmn = 0
-                    elif battle.turn_step == 0 and rival_pkmn[0].hp > 0:
-                        battle.player_trainer.chosen_enemy = 0
-                elif event.key == pygame.K_2:
-                    rival_pkmn = battle.rival_trainer.pokemon
-                    player_pkmn = battle.player_trainer.pokemon
-                    if battle.turn_step == 1 and player_pkmn[1].hp > 0:
-                        battle.player = battle.player_trainer.pokemon[1]
-                        battle.chosen_pkmn = 1
-                    elif battle.turn_step == 0 and rival_pkmn[1].hp > 0:
-                        battle.player_trainer.chosen_enemy = 1
-                elif event.key == pygame.K_3:
-                    rival_pkmn = battle.rival_trainer.pokemon
-                    player_pkmn = battle.player_trainer.pokemon
-                    if battle.turn_step == 1 and player_pkmn[2].hp > 0:
-                        battle.player = battle.player_trainer.pokemon[2]
-                        battle.chosen_pkmn = 2
-                    elif battle.turn_step == 0 and rival_pkmn[2].hp > 0:
-                        battle.player_trainer.chosen_enemy = 2
 
             elif event.type == pygame.KEYUP:
-                # player will stop moving upon reaching its target
-                if event.key == pygame.K_UP:
-                    characters[0].moving_dir = -1
-                elif event.key == pygame.K_DOWN:
-                    characters[0].moving_dir = -1
-                elif event.key == pygame.K_LEFT:
-                    characters[0].moving_dir = -1
-                elif event.key == pygame.K_RIGHT:
+                if state == "overworld" and event.key in (
+                    pygame.K_UP,
+                    pygame.K_DOWN,
+                    pygame.K_LEFT,
+                    pygame.K_RIGHT,
+                ):
                     characters[0].moving_dir = -1
 
         if state == "overworld":
@@ -786,16 +714,15 @@ async def main():
                 noticed = True
         elif state == "battle":
             battle.draw_pokemon(screen, stat_font)
-            if battle.turn_step != 1:
-                battle.draw_battle_text(screen, font)
-            else:
-                battle.draw_moves(screen, font)
+            battle.draw_battle_text(screen, font)
             if battle.showing_log:
                 battle.draw_logs(screen, font)
             else:
                 battle.draw_ai_brain(screen, font)
             if battle.showing_nodes:
                 battle.node_overlay(screen, font)
+            if battle.showing_kb:
+                battle.draw_kb_overlay(screen, font)
         elif state == "select":
             selection.draw(screen, font)
             selection.draw_pkmn_stats(screen, font)

@@ -1,0 +1,10 @@
+{
+  "facts": [
+    {"predicate": "NPC", "args": ["NPC_A"]},
+    {"predicate": "NPC", "args": ["NPC_B"]},
+    {"predicate": "Opponent", "args": ["NPC_A", "NPC_B"]},
+    {"predicate": "Opponent", "args": ["NPC_B", "NPC_A"]},
+    {"predicate": "Aggressive", "args": ["NPC_A"]},
+    {"predicate": "Aggressive", "args": ["NPC_B"]}
+  ]
+}

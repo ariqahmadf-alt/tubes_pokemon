@@ -13,7 +13,7 @@ Sistem terdiri atas tiga mode utama secara berurutan:
 
    - **Constraint Satisfaction Problem (CSP)** dengan Backtracking, Heuristik (MRV, Degree, LCV), Inferensi AC-3, dan Branch-and-Bound Pruning.
 
-3. **Battle** — Pertempuran turn-based di mana NPC menentukan aksi menggunakan Minimax atau Alpha-Beta Pruning, dengan tambahan modifikasi pengali keunggulan elemen (k) yang memengaruhi perhitungan _damage_.
+3. **Battle** — Simulasi turn-based antara tepat dua NPC. Roster yang disiapkan pada Select disalin menjadi data NPC A (bukan Pokémon pemain dalam battle); NPC A dan NPC B menentukan aksi sendiri menggunakan Minimax atau Alpha-Beta Pruning. Pemain hanya memajukan simulasi. Knowledge Base FOL terpisah menurunkan interaksi NPC dan menampilkan jejak inferensinya.
 
 ## Fitur Utama Tahap 3
 
@@ -29,6 +29,8 @@ Sistem terdiri atas tiga mode utama secara berurutan:
   - **Bound-Pruning** berdasarkan batas atas skor aditif.
 
 - **Pengali Keunggulan Elemen:** Membaca relasi dari `weaknesses.txt` (56 pasangan antarelemen dari 17 elemen) yang diterapkan pada transisi _battle_ (pengali damage 1.5x atau 1/1.5x).
+- **Knowledge-Based Battle Agent:** Fakta dan aturan FOL deklaratif diproses dengan forward chaining, terpisah dari kode inferensi dan logika battle.
+- **Dua NPC Berlawanan:** NPC A dan NPC B bergantian menentukan aksi; SPACE hanya memajukan satu aksi NPC.
 
 - **Dual Debug Overlays:** Antarmuka visual mendalam untuk meninjau langkah-langkah pencarian secara interaktif untuk kedua metode AI.
 
@@ -41,19 +43,28 @@ tubes_pokemon/
     ├── main.py
     ├── battle.py
     ├── selection.py
+    ├── knowledge_base.py
+    ├── inference_engine.py
+    ├── battle_interaction.py
     ├── maze.py
     ├── config.py
     ├── utils.py
     └── assets/
-        └── weaknesses.txt
+        ├── weaknesses.txt
+        └── knowledge_base/
+            ├── battle_facts.json
+            └── battle_rules.json
 ```
 
 ### Fungsi Utama Berkas
 
 | Berkas         | Fungsi                                                                                                                                                                |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main.py`      | Menjalankan _game loop_, navigasi overworld, transisi fase select, perulangan giliran _battle_, serta manajemen _debug overlay_.                                      |
-| `battle.py`    | Mengatur state _battle_, logika aksi (`ATTACK`, `DEFEND`, `HEAL`, `REST`), transisi _simulate_move_ dengan pengali elemen, Minimax, Alpha-Beta, serta evaluasi state. |
+| `main.py`      | Menjalankan _game loop_, navigasi overworld, transisi fase select, kemajuan giliran dua NPC, serta manajemen _debug overlay_. |
+| `battle.py`    | Mengatur state battle dua NPC, aksi Pokémon, Minimax/Alpha-Beta, evaluasi, dan overlay battle. |
+| `knowledge_base.py` | Memuat dan mengelola fakta serta aturan battle secara deklaratif. |
+| `inference_engine.py` | Menjalankan forward chaining FOL dan merekam jejak inferensi aktual. |
+| `battle_interaction.py` | Memvalidasi dan memetakan intent KB ke aksi battle yang tersedia. |
 | `selection.py` | Mengimplementasikan agen penyusun tim NPC (**Hill Climbing** dan **CSP** lengkap dengan AC-3, LCV, MRV, Branch-and-Bound) serta overlay visualnya.                    |
 | `maze.py`      | Membentuk representasi grid/graf dari peta dan hubungan antar-_node_.                                                                                                 |
 | `config.py`    | Menyimpan konfigurasi sistem, parameter overworld, dan jenis AI _battle_.                                                                                             |
@@ -78,31 +89,44 @@ cd src
 python main.py
 ```
 
+Jalankan pengujian battle/KB dari folder `src`:
+
+```bash
+python -m unittest discover -s tests
+```
+
 ## Kontrol Permainan
 
 | Tombol      | Fungsi                                                                                                   |
 | ----------- | -------------------------------------------------------------------------------------------------------- |
-| `↑ ↓ ← →`   | Menggerakkan pemain di overworld; memilih aksi/Pokémon di menu; menelusuri langkah _debug_ di Select.    |
-| `1 / 2 / 3` | Memilih Pokémon untuk aksi atau target di _battle_.                                                       |
-| `SPACE`     | Di Select, pertama kali menjalankan pemilihan tim rival dan berikutnya masuk ke _battle_; melanjutkan giliran _battle_. |
-| `M`         | Di Select, membuka/menutup **Local Search Overlay**; di luar Select, menampilkan/menyembunyikan log _battle_ (dan mengganti tampilan peta asli di overworld). |
+| `↑ ↓ ← →`   | Menggerakkan pemain di overworld; navigasi menu/debug Select; UP/DOWN menelusuri evaluasi aturan pada overlay KB. |
+| `SPACE`     | Di Select, menjalankan pemilihan roster NPC dan memulai battle; di battle, memajukan tepat satu aksi AI NPC. |
+| `M`         | Di Select, membuka/menutup **Local Search Overlay**; di battle, mengganti log aksi dan ringkasan search; di overworld, mengganti tampilan peta. |
+| `I`         | Membuka/menutup overlay fakta dan jejak inferensi Knowledge Base battle. |
 | `C`         | Membuka/menutup **CSP Backtracking Overlay** di Select.                                                   |
-| `K`         | Mengganti AI _battle_ antara Minimax dan Alpha-Beta Pruning.                                              |
 | `N`         | Menampilkan/menyembunyikan struktur _Node Tree_ di _battle_.                                               |
-| `S / A / D` | Memilih bobot evaluasi _battle_: S (HP 10, DEF 2), A (HP 25, DEF 1), atau D (HP 2, DEF 15).                    |
 | `Q / W`     | Menggulir riwayat log _battle_.                                                                           |
 | `ESC`       | Keluar dari program.                                                                                      |
 
+Mode pencarian dan bobot evaluasi diatur pada kode/config; pemain tidak dapat mengubah strategi NPC selama battle.
+
 ## Pemodelan Masalah AI (Tahap 3)
 
-### 1. Local Search (Hill Climbing)
+### 1. Battle Knowledge Base
+
+- **Representasi:** Predikat FOL menggunakan identitas `NPC_A` dan `NPC_B`, fakta lawan, kondisi HP, move, dan keunggulan tipe.
+- **Inferensi:** Forward chaining dengan pencocokan variabel hingga tidak ada fakta baru.
+- **Interaksi:** Tekan `I` selama battle untuk meninjau fakta, rule yang cocok/tidak cocok, substitusi, kesimpulan, serta hasil validasi aksi. Informasi yang tidak diketahui tidak dianggap otomatis salah.
+- Sistem battle saat ini belum memiliki status effect atau item; rule status tetap dapat diuji dengan fakta status, tetapi game tidak membuat kondisi status/item fiktif.
+
+### 2. Local Search (Hill Climbing)
 
 - **State:** Tim NPC berupa 3 Pokémon berbeda yang bukan anggota tim pemain.
 - **Neighbour:** Mengganti satu slot Pokémon dengan satu kandidat di luar tim (3 x (m - 3) kombinasi).
 - **Fungsi Objektif:** Memaksimalkan skor keunggulan elemen V(T), yaitu jumlah nilai m(r) untuk setiap Pokémon r dalam tim T. Nilai m(r) adalah selisih keunggulan terhadap seluruh tim pemain.
 - **Aturan:** _Steepest Ascent_ tanpa _random restart_ (hanya menerima perbaikan dengan skor yang lebih tinggi).
 
-### 2. Constraint Satisfaction Problem (CSP)
+### 3. Constraint Satisfaction Problem (CSP)
 
 - **Variabel (X):** X = {X1, X2, X3} (tiga slot tim NPC).
 - **Domain (D):** Daftar Pokémon di luar tim pemain.
