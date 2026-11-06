@@ -8,6 +8,7 @@ standard no-op propagation and pairwise mutex tests.
 from dataclasses import dataclass
 from itertools import product
 import json
+from math import isfinite
 from pathlib import Path
 import time
 
@@ -93,7 +94,7 @@ class PlanningDomain:
                 delete_effects=_read_facts(item.get("delete_effects", ())),
                 cost=float(item.get("cost", 1)),
             )
-            for item in data["actions"]
+            for item in data.get("actions", ())
         )
         return cls(
             schemas=schemas,
@@ -112,6 +113,21 @@ def _sort_action(action):
     return (action.name, action.arguments)
 
 
+def _validate_action_costs(actions):
+    if any(not isfinite(action.cost) or action.cost < 0 for action in actions):
+        raise ValueError("Planning action costs must be finite and non-negative.")
+
+
+def _validate_static_actions(actions, static_predicates):
+    static_predicates = frozenset(static_predicates)
+    if any(
+        _is_static(fact, static_predicates)
+        for action in actions
+        for fact in action.add_effects + action.delete_effects
+    ):
+        raise ValueError("Planning actions cannot modify static predicates.")
+
+
 def _substitute(fact, bindings):
     return tuple(bindings.get(term, term) for term in fact)
 
@@ -126,6 +142,11 @@ def ground_actions(schemas, objects, initial_state, static_predicates=()):
     static_predicates = frozenset(static_predicates)
     grounded = []
     for schema in sorted(schemas, key=lambda item: item.name):
+        if any(
+            _is_static(fact, static_predicates)
+            for fact in schema.add_effects + schema.delete_effects
+        ):
+            raise ValueError("Planning schemas cannot modify static predicates.")
         domains = [
             tuple(sorted(objects.get(parameter_type, ())))
             for _, parameter_type in schema.parameters
@@ -226,6 +247,7 @@ def _relaxed_h_max(state, goal, actions):
 
 def ignore_delete_lists_h_add(state, goal, actions):
     """Return h_add from delete relaxation; it is informative but not admissible."""
+    _validate_action_costs(actions)
     if goal.issubset(state):
         return 0.0
     costs = {fact: 0.0 for fact in state}
@@ -249,6 +271,7 @@ def ignore_delete_lists_h_add(state, goal, actions):
 
 def ignore_delete_lists_heuristic(state, goal, actions):
     """Delete-relaxed h_max; admissible with non-negative action costs."""
+    _validate_action_costs(actions)
     return _relaxed_h_max(state, goal, actions)
 
 
@@ -265,7 +288,6 @@ def _make_steps(initial_state, actions):
 def _result(
     status,
     initial_state,
-    goal,
     actions,
     method,
     initial_heuristic,
@@ -424,6 +446,8 @@ def forward_search(
     initial_state = frozenset(initial_state)
     goal = frozenset(goal)
     actions = tuple(sorted(actions, key=_sort_action))
+    _validate_action_costs(actions)
+    _validate_static_actions(actions, static_predicates)
     graph = graph or planning_graph(initial_state, goal, actions)
     if heuristic not in ("h_max", "h_add"):
         raise ValueError("heuristic must be 'h_max' or 'h_add'.")
@@ -433,7 +457,8 @@ def forward_search(
         else ignore_delete_lists_h_add
     )
     relaxed_h0 = estimate(initial_state, goal, actions)
-    graph_h0 = graph.goal_level or 0
+    min_action_cost = min((action.cost for action in actions), default=0)
+    graph_h0 = (graph.goal_level or 0) * min_action_cost
     h0 = max(relaxed_h0, graph_h0)
     stats = {
         "expanded": 0,
@@ -447,7 +472,7 @@ def forward_search(
     def finish(status, path=(), reason=""):
         stats["elapsed_ms"] = (time.perf_counter() - start) * 1000
         return _result(
-            status, initial_state, goal, path, method, h0, dict(stats), reason
+            status, initial_state, path, method, h0, dict(stats), reason
         )
 
     if goal.issubset(initial_state):
@@ -530,6 +555,8 @@ def regression_search(
     )
     goal = frozenset(goal)
     actions = tuple(sorted(actions, key=_sort_action))
+    _validate_action_costs(actions)
+    _validate_static_actions(actions, static_predicates)
     graph = graph or planning_graph(initial_state, goal, actions)
     h0 = max(
         _relaxed_h_max(initial_state, goal, actions),
@@ -549,7 +576,6 @@ def regression_search(
         return _result(
             status,
             initial_state,
-            goal,
             path,
             "backward",
             h0,

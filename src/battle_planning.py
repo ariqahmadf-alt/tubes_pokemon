@@ -1,19 +1,18 @@
-"""Translate battle observations and KB goals into grounded planning problems."""
+"""Plan battle goals using exact state transitions from the battle simulator."""
 
 from dataclasses import dataclass
 from copy import deepcopy
+import heapq
+from math import ceil, inf
 from pathlib import Path
 import time
 
 from battle_interaction import PlanHint
 from planning import (
+    Action,
     PlanningDomain,
+    PlanStep,
     PlanResult,
-    PlanningGraph,
-    forward_search,
-    ground_actions,
-    planning_graph,
-    regression_search,
 )
 
 
@@ -28,16 +27,19 @@ class PlanningDecision:
     rule_id: str | None
     result: PlanResult | None
     hint: PlanHint | None
-    graph: PlanningGraph | None
 
 
 def hp_band(pokemon, bands):
-    if pokemon.hp <= 0:
+    return _hp_band_value(pokemon.hp, pokemon.max_hp, bands)
+
+
+def _hp_band_value(hp, max_hp, bands):
+    if hp <= 0:
         return "gone"
-    ratio = pokemon.hp / pokemon.max_hp
+    ratio = hp / max_hp
     if ratio <= bands["low_max_ratio"]:
         return "low"
-    if ratio <= bands["high_min_ratio"]:
+    if ratio < bands["high_min_ratio"]:
         return "mid"
     return "high"
 
@@ -102,7 +104,9 @@ def planning_observation(actor, opponent, type_advantages, domain):
     return frozenset(state), objects, tuple(actor_ids), tuple(opponent_ids)
 
 
-def _goal_candidates(inference_result, actor_id, opponent_ids, domain):
+def _goal_candidates(
+    inference_result, actor_id, actor_pokemon_ids, opponent_ids, domain
+):
     priorities = {
         goal: index
         for index, goal in enumerate(domain.goal_priority)
@@ -120,6 +124,12 @@ def _goal_candidates(inference_result, actor_id, opponent_ids, domain):
         _, goal, goal_object = conclusion.arguments
         if goal not in priorities:
             continue
+        if goal == "win":
+            goal_object = None
+        elif goal == "recover" and goal_object not in actor_pokemon_ids:
+            continue
+        elif goal == "finish" and goal_object not in opponent_ids:
+            continue
         candidates.append(
             (priorities[goal], goal, goal_object, derivation.rule_id)
         )
@@ -129,77 +139,6 @@ def _goal_candidates(inference_result, actor_id, opponent_ids, domain):
             key=lambda item: (item[0], item[1], item[3], item[2]),
         )
     )
-
-
-def _goal_facts(goal, goal_object, opponent_ids):
-    if goal == "recover":
-        return frozenset({("hp", goal_object, "high")})
-    if goal == "finish":
-        return frozenset({("hp", goal_object, "gone")})
-    if goal == "win":
-        return frozenset(("hp", identity, "gone") for identity in opponent_ids)
-    raise ValueError(f"Unknown battle planning goal: {goal}")
-
-
-def _scope_problem(state, objects, actor_ids, opponent_ids, goal, goal_object):
-    if goal == "recover":
-        planning_actors = (goal_object,)
-        planning_targets = ()
-        schema_names = {"heal"}
-    elif goal == "finish":
-        planning_actors = actor_ids
-        planning_targets = (goal_object,)
-        schema_names = {
-            "attack-advantaged",
-            "attack-neutral",
-            "attack-resisted",
-            "break-shield",
-            "rest",
-        }
-    else:
-        planning_actors = actor_ids
-        planning_targets = opponent_ids
-        schema_names = {
-            "attack-advantaged",
-            "attack-neutral",
-            "attack-resisted",
-            "break-shield",
-            "rest",
-        }
-
-    actor_set = set(planning_actors)
-    target_set = set(planning_targets)
-    state_target_set = (
-        {goal_object} if goal == "recover" else target_set
-    )
-    relevant_ids = actor_set | target_set
-    scoped_facts = set()
-    for fact in state:
-        predicate = fact[0]
-        if predicate in ("drop", "raise"):
-            scoped_facts.add(fact)
-        elif predicate in ("advantage", "neutral", "resisted"):
-            if fact[1] in actor_set and fact[2] in target_set:
-                scoped_facts.add(fact)
-        elif predicate in ("hp", "shielded", "unshielded"):
-            if fact[1] in state_target_set:
-                scoped_facts.add(fact)
-        elif predicate in (
-            "attack-ready",
-            "heal-ready",
-            "defend-ready",
-            "rest-ready",
-        ):
-            if fact[1] in actor_set:
-                scoped_facts.add(fact)
-
-    scoped_objects = {
-        "pokemon": tuple(sorted(relevant_ids)),
-        "actor-pokemon": tuple(sorted(actor_set)),
-        "enemy-pokemon": tuple(sorted(target_set)),
-        "band": objects["band"],
-    }
-    return frozenset(scoped_facts), scoped_objects, schema_names
 
 
 def _first_step_hint(
@@ -224,7 +163,7 @@ def _first_step_hint(
         f"{opponent.identity}:{index}:{pokemon.name}": index
         for index, pokemon in enumerate(opponent.pokemon)
     }
-    if action.name.startswith("attack-") or action.name == "break-shield":
+    if action.name.startswith("attack-"):
         actor_id, target_id = action.arguments[:2]
         move_name = "ATTACK"
         target_indices = opponent_ids
@@ -266,56 +205,41 @@ def _first_step_hint(
     next_opponent = deepcopy(opponent)
     next_user = next_actor.pokemon[actor_index]
     if move_name == "ATTACK":
-        original_target = opponent.pokemon[target_index]
         target_trainer = next_opponent
     else:
-        original_target = actor.pokemon[target_index]
         target_trainer = next_actor
     next_target = target_trainer.pokemon[target_index]
     simulate_move(next_user, next_target, move_index)
 
     predicted_state = plan_result.steps[0].state
-    target_expected = next(
+    expected_values = {
+        "hp-value": next_target.hp,
+        "defense-value": next_target.defense,
+    }
+    for predicate, expected_value in expected_values.items():
+        planned_value = next(
+            (
+                float(fact[2])
+                for fact in predicted_state
+                if fact[:2] == (predicate, target_id)
+            ),
+            None,
+        )
+        if planned_value is None or planned_value != expected_value:
+            return None, (
+                f"Dry run disagreed with planned {predicate}: "
+                f"expected {planned_value}, got {expected_value}."
+            )
+    planned_pp = next(
         (
-            fact[2]
+            int(fact[3])
             for fact in predicted_state
-            if fact[:2] == ("hp", target_id)
+            if fact[:3] == ("pp-value", actor_id, move_name)
         ),
         None,
     )
-    if target_expected and action.name != "break-shield":
-        actual_band = hp_band(next_target, domain.hp_bands)
-        prior_band = hp_band(original_target, domain.hp_bands)
-        band_order = {"gone": 0, "low": 1, "mid": 2, "high": 3}
-        if move_name == "ATTACK":
-            agrees = (
-                next_target.hp < original_target.hp
-                and (
-                    actual_band == target_expected
-                    or band_order[actual_band] < band_order[target_expected]
-                    or actual_band == prior_band
-                )
-            )
-        elif move_name == "HEAL":
-            agrees = (
-                next_target.hp > original_target.hp
-                and (
-                    actual_band == target_expected
-                    or band_order[actual_band] > band_order[target_expected]
-                    or actual_band == prior_band
-                )
-            )
-        else:
-            agrees = actual_band == target_expected
-        if not agrees:
-            return None, (
-                "Dry run disagreed with the planned HP band: "
-                f"expected {target_expected}, got {actual_band}."
-            )
-    if action.name == "defend" and next_target.defense <= 0:
-        return None, "Dry run did not produce the planned shield."
-    if action.name == "break-shield" and next_target.defense > 0:
-        return None, "Dry run did not break the planned shield."
+    if planned_pp is None or planned_pp != next_user.moves[move_index].pp:
+        return None, "Dry run disagreed with planned move PP."
 
     return (
         PlanHint(
@@ -332,6 +256,432 @@ def _first_step_hint(
     )
 
 
+def _pokemon_state(pokemon):
+    return (
+        float(pokemon.hp),
+        float(pokemon.defense),
+        tuple(move.pp for move in pokemon.moves),
+    )
+
+
+def _state_facts(actor, opponent, state, static_facts, domain):
+    dynamic_predicates = {
+        "hp",
+        "shielded",
+        "unshielded",
+        "attack-ready",
+        "heal-ready",
+        "defend-ready",
+        "rest-ready",
+        "hp-value",
+        "defense-value",
+        "pp-value",
+    }
+    facts = {fact for fact in static_facts if fact[0] not in dynamic_predicates}
+    for trainer, pokemon_states in zip((actor, opponent), state):
+        for index, (pokemon, values) in enumerate(
+            zip(trainer.pokemon, pokemon_states)
+        ):
+            identity = f"{trainer.identity}:{index}:{pokemon.name}"
+            hp, defense, move_pp = values
+            facts.add(
+                ("hp", identity, _hp_band_value(hp, pokemon.max_hp, domain.hp_bands))
+            )
+            facts.add(("hp-value", identity, repr(hp)))
+            facts.add(("defense-value", identity, repr(defense)))
+            facts.add(("shielded" if defense > 0 else "unshielded", identity))
+            for move_index, move in enumerate(pokemon.moves):
+                pp = move_pp[move_index]
+                move_name = move.name.upper()
+                facts.add(("pp-value", identity, move_name, int(pp)))
+                if hp <= 0 or pp == 0:
+                    continue
+                predicate = {
+                    "ATTACK": "attack-ready",
+                    "HEAL": "heal-ready",
+                    "DEFEND": "defend-ready",
+                    "REST": "rest-ready",
+                }.get(move_name)
+                if predicate:
+                    facts.add((predicate, identity))
+    return frozenset(facts)
+
+
+def _copy_with_state(pokemon, values):
+    copied = deepcopy(pokemon)
+    copied.hp, copied.defense = values[:2]
+    for move, pp in zip(copied.moves, values[2]):
+        move.pp = pp
+    return copied
+
+
+def _goal_reached(state, actor, opponent, goal, goal_object, domain):
+    if goal == "recover":
+        for index, pokemon in enumerate(actor.pokemon):
+            identity = f"{actor.identity}:{index}:{pokemon.name}"
+            if identity == goal_object:
+                return (
+                    _hp_band_value(
+                        state[0][index][0], pokemon.max_hp, domain.hp_bands
+                    )
+                    == "high"
+                )
+        return False
+    if goal == "finish":
+        for index, pokemon in enumerate(opponent.pokemon):
+            identity = f"{opponent.identity}:{index}:{pokemon.name}"
+            if identity == goal_object:
+                return state[1][index][0] <= 0
+        return False
+    if goal == "win":
+        return all(values[0] <= 0 for values in state[1])
+    raise ValueError(f"Unknown battle planning goal: {goal}")
+
+
+def _goal_heuristic(
+    state, actor, opponent, goal, goal_object, type_advantages, domain
+):
+    if goal == "recover":
+        for index, pokemon in enumerate(actor.pokemon):
+            identity = f"{actor.identity}:{index}:{pokemon.name}"
+            if identity != goal_object:
+                continue
+            missing_hp = (
+                domain.hp_bands["high_min_ratio"] * pokemon.max_hp
+                - state[0][index][0]
+            )
+            healing = max(
+                (
+                    move.value
+                    for move in pokemon.moves
+                    if move.name.upper() == "HEAL"
+                ),
+                default=0,
+            )
+            return ceil(max(missing_hp, 0) / healing) if healing > 0 else inf
+        return inf
+
+    targets = (
+        tuple(range(len(opponent.pokemon)))
+        if goal == "win"
+        else tuple(
+            index
+            for index, pokemon in enumerate(opponent.pokemon)
+            if f"{opponent.identity}:{index}:{pokemon.name}" == goal_object
+        )
+    )
+    lower_bound = 0
+    for target_index in targets:
+        target = opponent.pokemon[target_index]
+        hp = state[1][target_index][0]
+        if hp <= 0:
+            continue
+        max_damage = 0.0
+        for attacker in actor.pokemon:
+            if attacker.hp <= 0:
+                continue
+            for move in attacker.moves:
+                if move.name.upper() != "ATTACK":
+                    continue
+                multiplier = (
+                    1.5
+                    if (attacker.element, target.element) in type_advantages
+                    else 1 / 1.5
+                    if (target.element, attacker.element) in type_advantages
+                    else 1
+                )
+                max_damage = max(max_damage, move.value * multiplier)
+        if max_damage <= 0:
+            return inf
+        lower_bound += ceil(hp / max_damage)
+    return lower_bound
+
+
+def _simulated_successors(
+    state, actor, opponent, goal, goal_object, type_advantages, simulate_move
+):
+    if goal == "recover":
+        actor_indices = tuple(
+            index
+            for index, pokemon in enumerate(actor.pokemon)
+            if f"{actor.identity}:{index}:{pokemon.name}" == goal_object
+        )
+    else:
+        actor_indices = tuple(range(len(actor.pokemon)))
+
+    for actor_index in actor_indices:
+        actor_pokemon = actor.pokemon[actor_index]
+        actor_hp, _, actor_pp = state[0][actor_index]
+        if actor_hp <= 0:
+            continue
+        for move_index, move in enumerate(actor_pokemon.moves):
+            if actor_pp[move_index] == 0:
+                continue
+            move_name = move.name.upper()
+            if goal == "recover" and move_name not in ("HEAL", "REST"):
+                continue
+            if goal != "recover" and move_name not in ("ATTACK", "REST"):
+                continue
+            if move_name == "REST" and all(
+                pp == available_move.max_pp
+                for pp, available_move in zip(actor_pp, actor_pokemon.moves)
+            ):
+                continue
+
+            if move_name == "ATTACK":
+                if goal == "finish":
+                    targets = tuple(
+                        index
+                        for index, pokemon in enumerate(opponent.pokemon)
+                        if f"{opponent.identity}:{index}:{pokemon.name}"
+                        == goal_object
+                        and state[1][index][0] > 0
+                    )
+                else:
+                    targets = tuple(
+                        index
+                        for index, values in enumerate(state[1])
+                        if values[0] > 0
+                    )
+            else:
+                targets = (actor_index,)
+
+            for target_index in targets:
+                next_actor_pokemon = _copy_with_state(
+                    actor_pokemon, state[0][actor_index]
+                )
+                if move_name == "ATTACK":
+                    next_target_pokemon = _copy_with_state(
+                        opponent.pokemon[target_index], state[1][target_index]
+                    )
+                else:
+                    next_target_pokemon = next_actor_pokemon
+                simulate_move(
+                    next_actor_pokemon,
+                    next_target_pokemon,
+                    move_index,
+                )
+                next_state = [list(state[0]), list(state[1])]
+                next_state[0][actor_index] = _pokemon_state(next_actor_pokemon)
+                if move_name == "ATTACK":
+                    next_state[1][target_index] = _pokemon_state(
+                        next_target_pokemon
+                    )
+                next_state = (tuple(next_state[0]), tuple(next_state[1]))
+
+                actor_id = (
+                    f"{actor.identity}:{actor_index}:{actor_pokemon.name}"
+                )
+                target_trainer = opponent if move_name == "ATTACK" else actor
+                target_pokemon = target_trainer.pokemon[target_index]
+                target_id = (
+                    f"{target_trainer.identity}:{target_index}:"
+                    f"{target_pokemon.name}"
+                )
+                if move_name == "ATTACK":
+                    if (
+                        actor_pokemon.element,
+                        target_pokemon.element,
+                    ) in type_advantages:
+                        action_name = "attack-advantaged"
+                    elif (
+                        target_pokemon.element,
+                        actor_pokemon.element,
+                    ) in type_advantages:
+                        action_name = "attack-resisted"
+                    else:
+                        action_name = "attack-neutral"
+                    arguments = (actor_id, target_id)
+                else:
+                    action_name = move_name.lower()
+                    arguments = (actor_id,)
+                yield (
+                    action_name,
+                    arguments,
+                    actor_index,
+                    target_index,
+                    move_index,
+                    next_state,
+                )
+
+
+def _simulated_plan(
+    actor,
+    opponent,
+    goal,
+    goal_object,
+    type_advantages,
+    simulate_move,
+    domain,
+    static_facts,
+    time_budget_ms,
+    max_expansions,
+):
+    started = time.perf_counter()
+    initial_state = (
+        tuple(_pokemon_state(pokemon) for pokemon in actor.pokemon),
+        tuple(_pokemon_state(pokemon) for pokemon in opponent.pokemon),
+    )
+    initial_heuristic = _goal_heuristic(
+        initial_state, actor, opponent, goal, goal_object, type_advantages, domain
+    )
+    stats = {
+        "expanded": 0,
+        "generated": 0,
+        "states": 1,
+        "levels": 0,
+        "action_mutexes": 0,
+        "fact_mutexes": 0,
+        "elapsed_ms": 0.0,
+    }
+
+    def finish(status, steps=(), reason=""):
+        stats["elapsed_ms"] = (time.perf_counter() - started) * 1000
+        return PlanResult(
+            status=status,
+            steps=tuple(steps),
+            total_cost=float(len(steps)) if status == "plan" else 0,
+            method="forward (simulated A*)",
+            initial_heuristic=initial_heuristic,
+            stats=dict(stats),
+            reason=reason,
+        )
+
+    if _goal_reached(initial_state, actor, opponent, goal, goal_object, domain):
+        return finish("plan")
+    if initial_heuristic == inf:
+        return finish("no-plan", reason="No legal action can reach the goal.")
+
+    serial = 0
+    frontier = [(initial_heuristic, 0, serial, initial_state)]
+    best_cost = {initial_state: 0}
+    parents = {}
+
+    def build_steps(final_state):
+        transitions = []
+        current_state = final_state
+        while current_state != initial_state:
+            previous_state, transition = parents[current_state]
+            transitions.append((previous_state, transition, current_state))
+            current_state = previous_state
+        transitions.reverse()
+        steps = []
+        previous_facts = _state_facts(
+            actor, opponent, initial_state, static_facts, domain
+        )
+        for previous_state, transition, next_state in transitions:
+            (
+                action_name,
+                arguments,
+                actor_index,
+                target_index,
+                move_index,
+            ) = transition
+            next_facts = _state_facts(
+                actor, opponent, next_state, static_facts, domain
+            )
+            actor_id = arguments[0]
+            target_id = arguments[1] if len(arguments) > 1 else actor_id
+            preconditions = tuple(
+                sorted(
+                    (
+                        fact
+                        for fact in previous_facts
+                        if fact[1] in (actor_id, target_id)
+                        and (
+                            fact[0]
+                            in (
+                                "hp",
+                                "hp-value",
+                                "defense-value",
+                                "pp-value",
+                                "attack-ready",
+                                "heal-ready",
+                                "defend-ready",
+                                "rest-ready",
+                                "shielded",
+                                "unshielded",
+                            )
+                            or (
+                                fact[0] in ("advantage", "neutral", "resisted")
+                                and fact[1:3] == (actor_id, target_id)
+                            )
+                        )
+                    ),
+                    key=lambda fact: tuple(str(part) for part in fact),
+                )
+            )
+            action = Action(
+                action_name,
+                arguments,
+                preconditions,
+                tuple(sorted(next_facts - previous_facts, key=str)),
+                tuple(sorted(previous_facts - next_facts, key=str)),
+            )
+            steps.append(PlanStep(action, next_facts, preconditions))
+            previous_facts = next_facts
+        return tuple(steps)
+
+    while frontier:
+        if (time.perf_counter() - started) * 1000 >= time_budget_ms:
+            return finish("limit", reason="wall-clock budget exceeded")
+        _, cost, _, state = heapq.heappop(frontier)
+        if cost != best_cost.get(state):
+            continue
+        if _goal_reached(state, actor, opponent, goal, goal_object, domain):
+            return finish("plan", build_steps(state))
+        if stats["expanded"] >= max_expansions:
+            return finish("limit", reason="maximum expansions exceeded")
+        stats["expanded"] += 1
+        for (
+            action_name,
+            arguments,
+            actor_index,
+            target_index,
+            move_index,
+            next_state,
+        ) in _simulated_successors(
+            state,
+            actor,
+            opponent,
+            goal,
+            goal_object,
+            type_advantages,
+            simulate_move,
+        ):
+            next_cost = cost + 1
+            if next_state in best_cost and best_cost[next_state] <= next_cost:
+                continue
+            best_cost[next_state] = next_cost
+            parents[next_state] = (
+                state,
+                (
+                    action_name,
+                    arguments,
+                    actor_index,
+                    target_index,
+                    move_index,
+                ),
+            )
+            stats["generated"] += 1
+            serial += 1
+            estimate = _goal_heuristic(
+                next_state,
+                actor,
+                opponent,
+                goal,
+                goal_object,
+                type_advantages,
+                domain,
+            )
+            stats["states"] = len(best_cost)
+            heapq.heappush(
+                frontier,
+                (next_cost + 2 * estimate, next_cost, serial, next_state),
+            )
+    return finish("no-plan", reason="frontier exhausted")
+
+
 def plan_battle_turn(
     actor,
     opponent,
@@ -339,7 +689,6 @@ def plan_battle_turn(
     type_advantages,
     simulate_move,
     method="forward",
-    heuristic="h_add",
     max_expansions=2500,
     time_budget_ms=80,
 ):
@@ -347,64 +696,46 @@ def plan_battle_turn(
         raise ValueError("method must be 'forward' or 'backward'.")
     started = time.perf_counter()
     domain = PlanningDomain.from_json(DOMAIN_PATH)
-    initial_state, objects, _, opponent_ids = planning_observation(
+    observed_state, _, actor_pokemon_ids, opponent_ids = planning_observation(
         actor, opponent, type_advantages, domain
     )
-    candidates = _goal_candidates(inference_result, actor.identity, opponent_ids, domain)
+    candidates = _goal_candidates(
+        inference_result,
+        actor.identity,
+        actor_pokemon_ids,
+        opponent_ids,
+        domain,
+    )
     if not candidates:
-        return PlanningDecision(actor.identity, None, None, None, None, None, None)
+        return PlanningDecision(actor.identity, None, None, None, None, None)
 
     _, goal, goal_object, rule_id = candidates[0]
-    goal_facts = _goal_facts(goal, goal_object, opponent_ids)
-    actor_ids = tuple(
-        f"{actor.identity}:{index}:{pokemon.name}"
-        for index, pokemon in enumerate(actor.pokemon)
-    )
-    initial_state, objects, schema_names = _scope_problem(
-        initial_state,
-        objects,
-        actor_ids,
-        opponent_ids,
+    result = _simulated_plan(
+        actor,
+        opponent,
         goal,
         goal_object,
-    )
-    actions = ground_actions(
-        tuple(schema for schema in domain.schemas if schema.name in schema_names),
-        objects,
-        initial_state,
-        domain.static_predicates,
-    )
-    graph = planning_graph(
-        initial_state,
-        goal_facts,
-        actions,
-        max_levels=domain.max_graph_levels,
+        type_advantages,
+        simulate_move,
+        domain,
+        observed_state,
+        max(time_budget_ms - (time.perf_counter() - started) * 1000, 0),
+        max_expansions,
     )
     if method == "backward":
-        result = regression_search(
-            initial_state,
-            goal_facts,
-            actions,
-            max_expansions=max_expansions,
-            time_budget_ms=max(
-                time_budget_ms - (time.perf_counter() - started) * 1000, 0
-            ),
-            static_predicates=domain.static_predicates,
-            graph=graph,
+        backward_notice = (
+            "Exact battle simulation uses forward A* for either method setting."
         )
-    else:
-        result = forward_search(
-            initial_state,
-            goal_facts,
-            actions,
-            method="astar",
-            max_expansions=max_expansions,
-            time_budget_ms=max(
-                time_budget_ms - (time.perf_counter() - started) * 1000, 0
+        result = PlanResult(
+            status=result.status,
+            steps=result.steps,
+            total_cost=result.total_cost,
+            method=result.method,
+            initial_heuristic=result.initial_heuristic,
+            stats=result.stats,
+            reason=" ".join(
+                part for part in (result.reason, backward_notice) if part
             ),
-            static_predicates=domain.static_predicates,
-            graph=graph,
-            heuristic=heuristic,
         )
     hint, reason = _first_step_hint(
         result,
@@ -424,20 +755,21 @@ def plan_battle_turn(
             method=result.method,
             initial_heuristic=result.initial_heuristic,
             stats=result.stats,
-            reason=reason,
+            reason=" ".join(
+                part for part in (result.reason, reason) if part
+            ),
             regression_goal=result.regression_goal,
         )
     stats = dict(result.stats)
     stats["elapsed_ms"] = (time.perf_counter() - started) * 1000
-    result = type(result)(
+    result = PlanResult(
         status=result.status,
         steps=result.steps,
         total_cost=result.total_cost,
-        method=("forward (A*)" if method == "forward" else "backward (regression)"),
+        method=result.method,
         initial_heuristic=result.initial_heuristic,
         stats=stats,
         reason=result.reason,
-        regression_goal=result.regression_goal,
     )
     return PlanningDecision(
         actor.identity,
@@ -446,5 +778,4 @@ def plan_battle_turn(
         rule_id,
         result,
         hint,
-        graph,
     )

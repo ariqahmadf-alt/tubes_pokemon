@@ -31,7 +31,7 @@ Sistem terdiri atas tiga mode utama secara berurutan:
 - **Pengali Keunggulan Elemen:** Membaca relasi dari `weaknesses.txt` (56 pasangan antarelemen dari 17 elemen) yang diterapkan pada transisi _battle_ (pengali damage 1.5x atau 1/1.5x).
 - **Knowledge-Based Battle Agent:** Fakta dan aturan FOL deklaratif diproses dengan forward chaining, termasuk pilihan Pokémon pelaku dan target.
 - **Dua NPC Berlawanan:** NPC A dan NPC B bergantian menentukan Pokémon hidup yang digunakan, target Pokémon lawan untuk serangan, dan move; SPACE hanya memajukan satu aksi NPC.
-- **Perencanaan Battle:** Planner STRIPS menerjemahkan tujuan hasil inferensi menjadi urutan aksi abstrak, lalu pencarian adversarial memeriksa keamanan langkah pertama.
+- **Perencanaan Battle:** Planner mencari urutan aksi dari state numerik yang transisinya dijalankan oleh simulator battle; pencarian adversarial tetap memeriksa keamanan langkah pertama.
 
 - **Debug Overlay:** Antarmuka untuk meninjau pencarian adversarial, inferensi, dan langkah-langkah perencanaan.
 
@@ -67,8 +67,8 @@ tubes_pokemon/
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `main.py`      | Menjalankan _game loop_, navigasi overworld, transisi fase select, kemajuan giliran dua NPC, serta manajemen _debug overlay_. |
 | `battle.py`    | Mengatur state battle dua NPC, aksi Pokémon, Minimax/Alpha-Beta, evaluasi, dan overlay battle. |
-| `battle_planning.py` | Mengubah observasi battle dan tujuan KB menjadi problem perencanaan, lalu memvalidasi langkah pertama terhadap simulasi move. |
-| `planning.py` | Menyediakan representasi STRIPS, grounding, transisi state, forward search, regression, heuristik h-max, dan planning graph. |
+| `battle_planning.py` | Mengubah tujuan KB menjadi problem pencarian state battle dan memakai simulator move untuk menghitung transisi aksi. |
+| `planning.py` | Menyediakan mesin STRIPS generik: grounding, transisi state, forward search, regression, heuristik, dan planning graph. |
 | `knowledge_base.py` | Memuat dan mengelola fakta serta aturan battle secara deklaratif. |
 | `inference_engine.py` | Menjalankan forward chaining FOL dan merekam jejak inferensi aktual. |
 | `battle_interaction.py` | Memvalidasi dan memetakan intent KB ke aksi battle yang tersedia. |
@@ -129,11 +129,11 @@ Mode pencarian dan bobot evaluasi diatur pada kode/config; pemain tidak dapat me
 
 ### 2. Automated Planning
 
-- **State:** Fakta boolean tertutup untuk kepemilikan Pokémon, relasi keunggulan tipe, kesiapan move, status pertahanan, dan HP dalam band `high`, `mid`, `low`, atau `gone`. Band `low` memakai ambang yang sama dengan KB, yaitu HP ≤ 30% maksimum.
-- **Action schemas:** `attack-advantaged`, `attack-neutral`, `attack-resisted`, `break-shield`, `defend`, `heal`, dan `rest` dideklarasikan di `assets/planning/battle_domain.json`. Aksi serangan dan pemulihan menggunakan efek tambah/hapus STRIPS; biaya serangan berturut-turut membedakan keunggulan, netral, dan resistansi.
-- **Goal:** Rule KB memilih `recover`, `finish`, atau `win`. Domain menetapkan prioritas `recover` > `finish` > `win`; recovery mengarahkan Pokémon lemah ke band HP tinggi, finish menargetkan satu Pokémon lawan, dan win menargetkan seluruh roster lawan.
-- **Planner:** Forward mode menggunakan A* dengan heuristik h-add delete-relaxation untuk pencarian praktis; h-max yang admissible tersedia untuk pencarian optimal melalui `config.planner_heuristic = "h_max"`. Backward mode menggunakan regression STRIPS. Planning graph dengan no-op dan mutex memberi batas bawah serta mendeteksi goal yang tidak terjangkau. Pencarian dibatasi berdasarkan ekspansi dan waktu.
-- **Integrasi battle:** Planner hanya memberi saran langkah pertama. Langkah tersebut diuji melalui simulasi move pada salinan state; langkah yang tidak cocok dengan hasil abstraksi tidak digunakan. Minimax/Alpha-Beta tetap menghitung nilai tanpa perubahan; saran rencana hanya mengurutkan aksi dan dapat dipilih jika berada dalam toleransi skor. State diamati ulang dan rencana dibuat ulang setiap giliran.
+- **State:** Planner battle memakai nilai numerik HP, defense, dan PP dari setiap Pokémon. Band `high`, `mid`, `low`, atau `gone` hanya dipakai untuk observasi dan tampilan; `low` berarti HP ≤ 30% maksimum.
+- **Transisi aksi:** Aksi battle disimulasikan memakai fungsi move game yang sama dengan simulasi pertarungan. Damage, pengurangan defense, penggunaan PP, heal, dan pemulihan PP oleh REST karena itu mengikuti aturan runtime; shield tidak diasumsikan pecah dalam satu serangan. Domain JSON menyimpan prioritas goal dan batas HP, bukan aksi simulasi.
+- **Goal:** Rule KB memilih `recover`, `finish`, atau `win`. Domain menetapkan prioritas `recover` > `finish` > `win`; recovery mengarahkan Pokémon lemah ke band HP tinggi, finish menargetkan satu Pokémon lawan, dan win menargetkan seluruh roster lawan tanpa mengikat tujuan tim ke satu Pokémon tertentu.
+- **Planner:** Pencarian A* berbobot menggunakan simulasi state numerik dan dibatasi berdasarkan ekspansi serta waktu; solusi tidak dijamin optimal. Pengaturan `backward` diterima untuk kompatibilitas konfigurasi, tetapi juga memakai pencarian maju simulasi karena regression pada abstraksi HP lama tidak akurat untuk state numerik.
+- **Integrasi battle:** Planner hanya memberi saran langkah pertama. Langkah itu divalidasi ulang dengan simulator yang sama sebelum dipakai; Minimax/Alpha-Beta tetap menghitung nilai aksi tanpa perubahan dan saran rencana hanya dipilih jika berada dalam toleransi skor. State diamati ulang dan rencana dibuat ulang setiap giliran.
 - **Debug:** Tekan `P` untuk melihat goal dan rule KB, urutan aksi, precondition, state setelah langkah, statistik, dan alasan saat rencana tidak tersedia. UP/DOWN menelusuri langkah rencana.
 
 ### 3. Local Search (Hill Climbing)

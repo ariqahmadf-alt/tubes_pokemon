@@ -125,6 +125,48 @@ class PlanningCoreTests(unittest.TestCase):
         heuristic = ignore_delete_lists_heuristic(initial, goal, actions)
         self.assertLessEqual(heuristic, len(plan.steps))
 
+    def test_astar_graph_bound_respects_fractional_action_costs(self):
+        initial = frozenset({("start",)})
+        goal = frozenset({("done",)})
+        action = Action(
+            "finish",
+            (),
+            (("start",),),
+            (("done",),),
+            (),
+            cost=0.25,
+        )
+
+        result = forward_search(
+            initial,
+            goal,
+            (action,),
+            time_budget_ms=500,
+        )
+
+        self.assertEqual(result.status, "plan")
+        self.assertEqual(result.total_cost, 0.25)
+        self.assertLessEqual(result.initial_heuristic, result.total_cost)
+
+    def test_search_rejects_negative_action_costs(self):
+        initial = frozenset({("start",)})
+        action = Action(
+            "invalid",
+            (),
+            (("start",),),
+            (("done",),),
+            (),
+            cost=-1,
+        )
+
+        with self.assertRaisesRegex(ValueError, "finite and non-negative"):
+            forward_search(
+                initial,
+                frozenset({("done",)}),
+                (action,),
+                time_budget_ms=500,
+            )
+
     def test_planning_graph_marks_drive_mutex_with_noop_at_origin(self):
         initial, goal, actions = ojek_problem()
         graph = planning_graph(initial, goal, actions)
@@ -171,6 +213,23 @@ class PlanningCoreTests(unittest.TestCase):
         )
         self.assertEqual(len(actions), 1)
         self.assertEqual(actions[0].arguments, ("a", "b"))
+
+    def test_static_predicates_cannot_be_modified_by_action_schemas(self):
+        schema = ActionSchema(
+            "change-owner",
+            (),
+            (),
+            (("owner", "a", "b"),),
+            (),
+        )
+
+        with self.assertRaisesRegex(ValueError, "cannot modify static"):
+            ground_actions(
+                (schema,),
+                {},
+                frozenset(),
+                static_predicates=("owner",),
+            )
 
     def test_expansion_cap_returns_limit_status(self):
         initial, goal, actions = ojek_problem()

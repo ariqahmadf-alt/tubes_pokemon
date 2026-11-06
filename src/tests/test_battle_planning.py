@@ -3,6 +3,7 @@ from copy import deepcopy
 
 import battle
 import config
+from battle_planning import hp_band
 
 
 def fresh_pokemon(index):
@@ -57,12 +58,48 @@ class BattlePlanningTests(unittest.TestCase):
         self.assertEqual(decision.goal, "recover")
         self.assertEqual(decision.rule_id, "G1")
         self.assertEqual(decision.result.status, "plan")
+        self.assertEqual(len(decision.result.steps), 2)
         self.assertIsNotNone(decision.hint)
         self.assertEqual(decision.hint.actor_index, 1)
         self.assertEqual(decision.hint.move_name, "HEAL")
+        self.assertIn(
+            (
+                "hp-value",
+                battle._pokemon_identity(battle.npc_a_trainer, 1),
+                "50.0",
+            ),
+            decision.result.steps[0].state,
+        )
+        self.assertIn(
+            (
+                "hp-value",
+                battle._pokemon_identity(battle.npc_a_trainer, 1),
+                "70.0",
+            ),
+            decision.result.steps[-1].state,
+        )
+
+    def test_hp_band_boundary_matches_high_min_ratio(self):
+        pokemon = fresh_pokemon(0)
+        pokemon.hp = 70
+
+        self.assertEqual(
+            hp_band(
+                pokemon,
+                {"low_max_ratio": 0.3, "high_min_ratio": 0.7},
+            ),
+            "high",
+        )
 
     def test_low_hp_enemy_selects_finish_goal(self):
-        battle.npc_b_trainer.pokemon[2].hp = 20
+        battle.player_trainer = battle.Trainer(
+            "draft NPC A", [fresh_pokemon(0)], identity="NPC_A"
+        )
+        battle.rival_trainer = battle.Trainer(
+            "draft NPC B", [fresh_pokemon(3)], identity="NPC_B"
+        )
+        battle.start_battle()
+        battle.npc_b_trainer.pokemon[0].hp = 20
 
         decision = self.decision()
 
@@ -70,9 +107,19 @@ class BattlePlanningTests(unittest.TestCase):
         self.assertEqual(decision.rule_id, "G2")
         self.assertEqual(
             decision.goal_object,
-            battle._pokemon_identity(battle.npc_b_trainer, 2),
+            battle._pokemon_identity(battle.npc_b_trainer, 0),
         )
         self.assertEqual(decision.result.status, "plan")
+        self.assertEqual(len(decision.result.steps), 2)
+        target_id = battle._pokemon_identity(battle.npc_b_trainer, 0)
+        self.assertIn(
+            ("hp-value", target_id, "5.0"),
+            decision.result.steps[0].state,
+        )
+        self.assertIn(
+            ("hp-value", target_id, "0.0"),
+            decision.result.steps[-1].state,
+        )
 
     def test_unpressured_enemy_team_selects_win_goal(self):
         for pokemon in battle.npc_a_trainer.pokemon + battle.npc_b_trainer.pokemon:
@@ -81,10 +128,22 @@ class BattlePlanningTests(unittest.TestCase):
         decision = self.decision()
 
         self.assertEqual(decision.goal, "win")
+        self.assertIsNone(decision.goal_object)
         self.assertEqual(decision.rule_id, "G4")
         self.assertEqual(decision.result.status, "plan")
+        self.assertGreater(len(decision.result.steps), 2)
+        final_state = decision.result.steps[-1].state
+        for index, pokemon in enumerate(battle.npc_b_trainer.pokemon):
+            self.assertIn(
+                (
+                    "hp-value",
+                    battle._pokemon_identity(battle.npc_b_trainer, index),
+                    "0.0",
+                ),
+                final_state,
+            )
 
-    def test_backward_planner_produces_a_battle_plan(self):
+    def test_backward_setting_uses_exact_forward_simulation(self):
         actor, opponent = battle._trainers_for("NPC_B")
         result = battle._refresh_inference()
 
@@ -99,7 +158,8 @@ class BattlePlanningTests(unittest.TestCase):
 
         self.assertEqual(decision.actor, "NPC_B")
         self.assertEqual(decision.result.status, "plan")
-        self.assertEqual(decision.result.method, "backward (regression)")
+        self.assertEqual(decision.result.method, "forward (simulated A*)")
+        self.assertIn("uses forward A*", decision.result.reason)
 
     def test_plan_hint_is_followed_when_within_search_tolerance(self):
         battle.npc_b_trainer.pokemon[0].hp = 20
@@ -118,15 +178,51 @@ class BattlePlanningTests(unittest.TestCase):
         self.assertEqual(action.target_index, decision.hint.target_index)
         self.assertTrue(battle.last_search["plan_followed"])
 
-    def test_dry_run_rejects_a_shield_break_the_move_cannot_complete(self):
+    def test_planner_accounts_for_multiple_hits_to_break_shield_and_finish(self):
         battle.npc_b_trainer.pokemon[0].hp = 20
         battle.npc_b_trainer.pokemon[0].defense = 30
 
         decision = self.decision()
 
         self.assertEqual(decision.result.status, "plan")
-        self.assertIsNone(decision.hint)
-        self.assertIn("did not break", decision.result.reason)
+        self.assertEqual(len(decision.result.steps), 3)
+        self.assertIsNotNone(decision.hint)
+        states = [step.state for step in decision.result.steps]
+        target_id = battle._pokemon_identity(battle.npc_b_trainer, 0)
+        self.assertIn(("hp-value", target_id, "20.0"), states[0])
+        self.assertIn(("defense-value", target_id, "15.0"), states[0])
+        self.assertIn(("shielded", target_id), decision.result.steps[0].preconditions)
+        self.assertIn(("hp-value", target_id, "20.0"), states[1])
+        self.assertIn(("defense-value", target_id, "0.0"), states[1])
+        self.assertIn(("hp-value", target_id, "0.0"), states[2])
+
+    def test_planner_restores_spent_pp_before_reusing_a_move(self):
+        battle.player_trainer = battle.Trainer(
+            "draft NPC A", [fresh_pokemon(0)], identity="NPC_A"
+        )
+        battle.rival_trainer = battle.Trainer(
+            "draft NPC B", [fresh_pokemon(3)], identity="NPC_B"
+        )
+        battle.start_battle()
+        battle.npc_a_trainer.pokemon[0].moves[0].pp = 1
+        battle.npc_b_trainer.pokemon[0].hp = 30
+
+        decision = self.decision()
+
+        self.assertEqual(decision.result.status, "plan")
+        self.assertEqual(
+            [step.action.name for step in decision.result.steps],
+            ["attack-neutral", "rest", "attack-neutral"],
+        )
+        actor_id = battle._pokemon_identity(battle.npc_a_trainer, 0)
+        self.assertIn(
+            ("pp-value", actor_id, "ATTACK", 0),
+            decision.result.steps[0].state,
+        )
+        self.assertIn(
+            ("pp-value", actor_id, "ATTACK", 5),
+            decision.result.steps[1].state,
+        )
 
     def test_goal_selection_works_with_single_pokemon_rosters_for_either_npc(self):
         battle.player_trainer = battle.Trainer(

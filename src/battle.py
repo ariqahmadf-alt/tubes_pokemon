@@ -851,7 +851,6 @@ def advance_battle():
             type_advantages,
             simulate_move,
             method=config.planner_method,
-            heuristic=config.planner_heuristic,
             max_expansions=config.planner_max_expansions,
         )
         last_planning = decision
@@ -1752,7 +1751,17 @@ def draw_planning_overlay(screen, font):
             (
                 fact
                 for fact in selected_step.state
-                if fact[0] in ("hp", "shielded", "unshielded")
+                if fact[0] in (
+                    "hp",
+                    "hp-value",
+                    "defense-value",
+                    "shielded",
+                    "unshielded",
+                )
+                or (
+                    fact[0] == "pp-value"
+                    and fact[1] == selected_step.action.arguments[0]
+                )
             ),
             key=lambda fact: tuple(str(part) for part in fact),
         )
@@ -1784,9 +1793,7 @@ def draw_planning_overlay(screen, font):
     stats_text = (
         f"EXPANDED: {stats['expanded']} | GENERATED: {stats['generated']} | "
         f"h(initial): {heuristic_text} | "
-        f"GRAPH LEVELS: {stats['levels']} | "
-        f"ACTION MUTEX: {stats['action_mutexes']} | "
-        f"FACT MUTEX: {stats['fact_mutexes']} | "
+        f"SEARCHED STATES: {stats['states']} | "
         f"ELAPSED: {stats['elapsed_ms']:.2f} ms"
     )
     screen.blit(
