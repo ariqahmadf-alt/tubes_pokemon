@@ -95,6 +95,51 @@ class TwoNPCBattleTests(unittest.TestCase):
         facts = set(battle._observed_facts())
         self.assertIn(Atom("HasTypeAdvantage", ("NPC_B", "NPC_A")), facts)
 
+        bench_a = battle.npc_a_trainer.pokemon[1]
+        bench_b = battle.npc_b_trainer.pokemon[1]
+        bench_a.element = "water"
+        bench_b.element = "fire"
+        facts = set(battle._observed_facts())
+        self.assertIn(
+            Atom(
+                "HasTypeAdvantage",
+                (
+                    battle._pokemon_identity(battle.npc_a_trainer, 1),
+                    battle._pokemon_identity(battle.npc_b_trainer, 1),
+                ),
+            ),
+            facts,
+        )
+
+    def test_action_can_use_a_bench_pokemon_and_target_a_bench_opponent(self):
+        battle.npc_a_trainer.pokemon.append(fresh_pokemon(2))
+        battle.npc_b_trainer.pokemon.append(fresh_pokemon(5))
+
+        for pokemon in battle.npc_a_trainer.pokemon:
+            for move in pokemon.moves:
+                move.pp = 0
+        attacker = battle.npc_a_trainer.pokemon[1]
+        attacker.moves[0].pp = 5
+        attacker.moves[0].value = 100
+
+        for pokemon in battle.npc_b_trainer.pokemon:
+            for move in pokemon.moves:
+                move.pp = 0
+        battle.npc_b_trainer.pokemon[0].defense = 200
+        battle.npc_b_trainer.pokemon[1].hp = 40
+        battle.npc_b_trainer.pokemon[2].defense = 200
+
+        action = battle.choose_action("NPC_A", depth=2, mode="minimax")
+        self.assertEqual(action, battle.BattleAction(1, 1, 0))
+
+        self.assertTrue(battle.advance_battle())
+        self.assertEqual(battle.move_logs[-1].actor_pokemon, attacker.name)
+        self.assertEqual(
+            battle.move_logs[-1].target_pokemon,
+            battle.npc_b_trainer.pokemon[1].name,
+        )
+        self.assertIn("on NPC B's", battle.battle_text)
+
     def test_defeated_npc_stops_turn_progression_and_declares_winner(self):
         battle.player_trainer = battle.Trainer(
             "draft NPC A", [fresh_pokemon(0)]

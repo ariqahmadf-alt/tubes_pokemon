@@ -91,6 +91,90 @@
         {"predicate": "HasHealingMove", "args": ["?actor"]}
       ],
       "conclusion": {"predicate": "ActionIntent", "args": ["?actor", "?actor", "HEAL"]}
+    },
+    {
+      "id": "P1",
+      "description": "Use a living team Pokémon to pressure a low-HP opposing Pokémon.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?target"]},
+        {"predicate": "Controls", "args": ["?actor", "?actorPokemon"]},
+        {"predicate": "Controls", "args": ["?target", "?targetPokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?actorPokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?targetPokemon"]},
+        {"predicate": "LowHP", "args": ["?targetPokemon"]},
+        {"predicate": "Aggressive", "args": ["?actor"]},
+        {"predicate": "HasDamagingMove", "args": ["?actorPokemon"]}
+      ],
+      "conclusion": {
+        "predicate": "PokemonActionIntent",
+        "args": ["?actorPokemon", "?targetPokemon", "ATTACK"]
+      }
+    },
+    {
+      "id": "P2",
+      "description": "Use the Pokémon with type advantage against its opposing target.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?target"]},
+        {"predicate": "Controls", "args": ["?actor", "?actorPokemon"]},
+        {"predicate": "Controls", "args": ["?target", "?targetPokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?actorPokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?targetPokemon"]},
+        {"predicate": "HasTypeAdvantage", "args": ["?actorPokemon", "?targetPokemon"]},
+        {"predicate": "HasDamagingMove", "args": ["?actorPokemon"]}
+      ],
+      "conclusion": {
+        "predicate": "PokemonActionIntent",
+        "args": ["?actorPokemon", "?targetPokemon", "ATTACK"]
+      }
+    },
+    {
+      "id": "P3",
+      "description": "Use a high-damage Pokémon to finish a low-HP opposing Pokémon.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?target"]},
+        {"predicate": "Controls", "args": ["?actor", "?actorPokemon"]},
+        {"predicate": "Controls", "args": ["?target", "?targetPokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?actorPokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?targetPokemon"]},
+        {"predicate": "LowHP", "args": ["?targetPokemon"]},
+        {"predicate": "HasHighDamagePotential", "args": ["?actorPokemon"]},
+        {"predicate": "HasDamagingMove", "args": ["?actorPokemon"]}
+      ],
+      "conclusion": {
+        "predicate": "PokemonActionIntent",
+        "args": ["?actorPokemon", "?targetPokemon", "ATTACK"]
+      }
+    },
+    {
+      "id": "P4",
+      "description": "Use a damaging move against a living Pokémon with an exploitable status.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?target"]},
+        {"predicate": "Controls", "args": ["?actor", "?actorPokemon"]},
+        {"predicate": "Controls", "args": ["?target", "?targetPokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?actorPokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?targetPokemon"]},
+        {"predicate": "UnderStatusEffect", "args": ["?targetPokemon"]},
+        {"predicate": "HasDamagingMove", "args": ["?actorPokemon"]}
+      ],
+      "conclusion": {
+        "predicate": "PokemonActionIntent",
+        "args": ["?actorPokemon", "?targetPokemon", "ATTACK"]
+      }
+    },
+    {
+      "id": "P5",
+      "description": "Heal a living low-HP Pokémon when it has a healing move.",
+      "conditions": [
+        {"predicate": "Controls", "args": ["?actor", "?pokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?pokemon"]},
+        {"predicate": "LowHP", "args": ["?pokemon"]},
+        {"predicate": "HasHealingMove", "args": ["?pokemon"]}
+      ],
+      "conclusion": {
+        "predicate": "PokemonActionIntent",
+        "args": ["?pokemon", "?pokemon", "HEAL"]
+      }
     }
   ]
 }

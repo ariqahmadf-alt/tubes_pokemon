@@ -1,6 +1,7 @@
 import pygame
 import config
 from copy import deepcopy
+from dataclasses import dataclass
 from math import inf
 from pathlib import Path
 from utils import scale_sprite
@@ -42,11 +43,28 @@ inference_result = None
 
 
 class MoveLogEntry:
-    def __init__(self, move, user, npc_a_state, npc_b_state):
+    def __init__(
+        self,
+        move,
+        user,
+        npc_a_state,
+        npc_b_state,
+        actor_pokemon,
+        target_pokemon,
+    ):
         self.move = move
         self.user = user
+        self.actor_pokemon = actor_pokemon
+        self.target_pokemon = target_pokemon
         self.npc_a = deepcopy(npc_a_state)
         self.npc_b = deepcopy(npc_b_state)
+
+
+@dataclass(frozen=True)
+class BattleAction:
+    actor_index: int
+    target_index: int
+    move_index: int
 
 
 class Move:
@@ -247,6 +265,42 @@ def available_moves(pokemon):
     return [index for index, move in enumerate(pokemon.moves) if move.pp != 0]
 
 
+def _pokemon_identity(trainer, index):
+    pokemon = trainer.pokemon[index]
+    return f"{trainer.identity}:{index}:{pokemon.name}"
+
+
+def _action_label(actor, opponent, action):
+    user = actor.pokemon[action.actor_index]
+    move = user.moves[action.move_index]
+    target_trainer = opponent if move.name.upper() == "ATTACK" else actor
+    target = target_trainer.pokemon[action.target_index]
+    return f"{user.name} -> {target.name}: {move.name}"
+
+
+def _legal_actions(actor, opponent):
+    actions = []
+    for actor_index, pokemon in enumerate(actor.pokemon):
+        if pokemon.hp <= 0:
+            continue
+        for move_index in available_moves(pokemon):
+            move = pokemon.moves[move_index]
+            target_trainer = (
+                opponent if move.name.upper() == "ATTACK" else actor
+            )
+            target_indices = (
+                range(len(target_trainer.pokemon))
+                if target_trainer is opponent
+                else (actor_index,)
+            )
+            for target_index in target_indices:
+                if target_trainer.pokemon[target_index].hp > 0:
+                    actions.append(
+                        BattleAction(actor_index, target_index, move_index)
+                    )
+    return actions
+
+
 def simulate_move(actor, enemy, move_idx):
     move = actor.moves[move_idx]
 
@@ -332,24 +386,32 @@ def _search(
         return score
 
     actor = npc_a_state if maximizing else npc_b_state
-    active = actor.active
-    moves = available_moves(active)
-    if not moves:
+    opponent = npc_b_state if maximizing else npc_a_state
+    actions = _legal_actions(actor, opponent)
+    if not actions:
         return evaluate(npc_a_state, npc_b_state)
 
     best_score = -inf if maximizing else inf
-    for move_pos, move_idx in enumerate(moves):
+    for action_pos, action in enumerate(actions):
         next_a = deepcopy(npc_a_state)
         next_b = deepcopy(npc_b_state)
         next_actor = next_a if maximizing else next_b
         next_opponent = next_b if maximizing else next_a
-        simulate_move(next_actor.active, next_opponent.active, move_idx)
+        user = next_actor.pokemon[action.actor_index]
+        target_trainer = (
+            next_opponent
+            if user.moves[action.move_index].name.upper() == "ATTACK"
+            else next_actor
+        )
+        target = target_trainer.pokemon[action.target_index]
+        simulate_move(user, target, action.move_index)
         next_opponent.advance_active()
 
         child = None
         if node is not None:
             child = _new_search_node(
-                f"{active.name}: {active.moves[move_idx].name}", not maximizing
+                _action_label(next_actor, next_opponent, action),
+                not maximizing,
             )
             node["children"].append(child)
 
@@ -373,11 +435,24 @@ def _search(
 
         if pruning and beta <= alpha:
             if metrics is not None:
-                metrics["pruned"] += len(moves) - move_pos - 1
+                metrics["pruned"] += len(actions) - action_pos - 1
             if node is not None:
-                for remaining_move in moves[move_pos + 1 :]:
+                for remaining_action in actions[action_pos + 1 :]:
+                    remaining_user = actor.pokemon[remaining_action.actor_index]
+                    remaining_target_trainer = (
+                        opponent
+                        if remaining_user.moves[
+                            remaining_action.move_index
+                        ].name.upper()
+                        == "ATTACK"
+                        else actor
+                    )
+                    remaining_target = remaining_target_trainer.pokemon[
+                        remaining_action.target_index
+                    ]
                     cut_node = _new_search_node(
-                        f"{active.name}: {active.moves[remaining_move].name}",
+                        f"{remaining_user.name} -> {remaining_target.name}: "
+                        f"{remaining_user.moves[remaining_action.move_index].name}",
                         not maximizing,
                     )
                     cut_node["pruned"] = True
@@ -412,6 +487,29 @@ def _trainers_for(actor_id):
 def _observed_facts():
     facts = []
     for trainer in (npc_a_trainer, npc_b_trainer):
+        for index, pokemon in enumerate(trainer.pokemon):
+            identity = _pokemon_identity(trainer, index)
+            facts.append(Atom("Controls", (trainer.identity, identity)))
+            if pokemon.hp <= 0:
+                continue
+            facts.append(Atom("AlivePokemon", (identity,)))
+            usable_moves = [
+                move for move in pokemon.moves if move.pp != 0
+            ]
+            if pokemon.hp <= pokemon.max_hp * 0.3:
+                facts.append(Atom("LowHP", (identity,)))
+            if any(move.name.upper() == "ATTACK" for move in usable_moves):
+                facts.append(Atom("HasDamagingMove", (identity,)))
+            if any(
+                move.name.upper() == "ATTACK" and move.value >= 15
+                for move in usable_moves
+            ):
+                facts.append(Atom("HasHighDamagePotential", (identity,)))
+            if pokemon.hp < pokemon.max_hp and any(
+                move.name.upper() == "HEAL" for move in usable_moves
+            ):
+                facts.append(Atom("HasHealingMove", (identity,)))
+
         active = trainer.active
         if active is None or active.hp <= 0:
             continue
@@ -443,6 +541,19 @@ def _observed_facts():
             facts.append(Atom("HasTypeAdvantage", ("NPC_A", "NPC_B")))
         if (active_b.element, active_a.element) in type_advantages:
             facts.append(Atom("HasTypeAdvantage", ("NPC_B", "NPC_A")))
+
+    for index_a, pokemon_a in enumerate(npc_a_trainer.pokemon):
+        if pokemon_a.hp <= 0:
+            continue
+        identity_a = _pokemon_identity(npc_a_trainer, index_a)
+        for index_b, pokemon_b in enumerate(npc_b_trainer.pokemon):
+            if pokemon_b.hp <= 0:
+                continue
+            identity_b = _pokemon_identity(npc_b_trainer, index_b)
+            if (pokemon_a.element, pokemon_b.element) in type_advantages:
+                facts.append(Atom("HasTypeAdvantage", (identity_a, identity_b)))
+            if (pokemon_b.element, pokemon_a.element) in type_advantages:
+                facts.append(Atom("HasTypeAdvantage", (identity_b, identity_a)))
     return facts
 
 
@@ -492,32 +603,38 @@ def start_battle():
 def choose_action(actor_id, depth=2, mode="minimax", hints=()):
     global last_search
     actor, opponent = _trainers_for(actor_id)
-    if actor.is_defeated or opponent.is_defeated or actor.active is None:
+    if actor.is_defeated or opponent.is_defeated:
         return None
 
-    move_indices = available_moves(actor.active)
-    hinted_actions = {
-        hint.action
-        for hint in interaction_handler.matching_hints(
-            hints, actor_id, opponent.identity, "ATTACK"
+    actions = _legal_actions(actor, opponent)
+    if not actions:
+        return None
+
+    def is_hinted(action):
+        user = actor.pokemon[action.actor_index]
+        move = user.moves[action.move_index]
+        target_trainer = opponent if move.name.upper() == "ATTACK" else actor
+        return bool(
+            interaction_handler.matching_hints(
+                hints,
+                _pokemon_identity(actor, action.actor_index),
+                _pokemon_identity(target_trainer, action.target_index),
+                move.name,
+            )
         )
-    }
-    hinted_actions.update(
-        hint.action
-        for hint in interaction_handler.matching_hints(
-            hints, actor_id, actor_id, "HEAL"
-        )
-    )
-    move_indices.sort(
-        key=lambda index: (
-            actor.active.moves[index].name.upper() not in hinted_actions,
-            index,
+
+    actions.sort(
+        key=lambda action: (
+            not is_hinted(action),
+            action.actor_index,
+            action.target_index,
+            action.move_index,
         )
     )
 
     maximizing = actor_id == "NPC_A"
     best_score = -inf if maximizing else inf
-    best_move = None
+    best_action = None
     alpha = -inf
     beta = inf
     metrics = {"nodes": 1, "leaves": 0, "pruned": 0}
@@ -526,16 +643,22 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=()):
     )
     action_scores = []
 
-    for move_idx in move_indices:
+    for action in actions:
         next_a = deepcopy(npc_a_trainer)
         next_b = deepcopy(npc_b_trainer)
         next_actor = next_a if actor_id == "NPC_A" else next_b
         next_opponent = next_b if actor_id == "NPC_A" else next_a
-        simulate_move(next_actor.active, next_opponent.active, move_idx)
+        user = next_actor.pokemon[action.actor_index]
+        move = user.moves[action.move_index]
+        target_trainer = (
+            next_opponent if move.name.upper() == "ATTACK" else next_actor
+        )
+        target = target_trainer.pokemon[action.target_index]
+        simulate_move(user, target, action.move_index)
         next_opponent.advance_active()
 
         child = _new_search_node(
-            f"{actor.active.name}: {actor.active.moves[move_idx].name}",
+            _action_label(next_actor, next_opponent, action),
             not maximizing,
         )
         root["children"].append(child)
@@ -566,8 +689,14 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=()):
             )
         action_scores.append(
             {
-                "move": move_idx,
-                "name": actor.active.moves[move_idx].name,
+                "actor_index": action.actor_index,
+                "actor": actor.pokemon[action.actor_index].name,
+                "target_index": action.target_index,
+                "target": target_trainer.pokemon[action.target_index].name,
+                "move_index": action.move_index,
+                "name": actor.pokemon[action.actor_index]
+                .moves[action.move_index]
+                .name,
                 "score": score,
             }
         )
@@ -576,7 +705,7 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=()):
             not maximizing and score < best_score
         ):
             best_score = score
-            best_move = move_idx
+            best_action = action
         if maximizing:
             alpha = max(alpha, best_score)
         else:
@@ -585,10 +714,10 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=()):
     root["value"] = best_score
     root["alpha"] = alpha
     root["beta"] = beta
-    if best_move is not None:
-        chosen_name = actor.active.moves[best_move].name
+    if best_action is not None:
+        chosen_label = _action_label(actor, opponent, best_action)
         for child in root["children"]:
-            if child["label"].endswith(chosen_name):
+            if child["label"] == chosen_label:
                 node = child
                 while node is not None:
                     node["on_path"] = True
@@ -608,11 +737,11 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=()):
         "mode": mode,
         "depth": depth,
         "action_scores": action_scores,
-        "best_move": best_move,
+        "best_action": best_action,
         "metrics": metrics,
         "tree": root,
     }
-    return best_move
+    return best_action
 
 
 def _finish_battle():
@@ -642,16 +771,16 @@ def advance_battle():
     actor, opponent = _trainers_for(current_agent)
     result = _refresh_inference()
     hints = interaction_handler.hints_from(result)
-    move_idx = choose_action(
+    action = choose_action(
         current_agent, depth=2, mode=config.ai_type, hints=hints
     )
-    if move_idx is None:
+    if action is None:
         return False
 
-    user = actor.active
-    move = user.moves[move_idx]
+    user = actor.pokemon[action.actor_index]
+    move = user.moves[action.move_index]
     target_trainer = opponent if move.name.upper() == "ATTACK" else actor
-    target = target_trainer.active
+    target = target_trainer.pokemon[action.target_index]
     if user.hp <= 0 or target is None or target.hp <= 0 or move.pp == 0:
         last_interaction = (
             f"{actor.name}'s selected action was rejected because "
@@ -661,8 +790,8 @@ def advance_battle():
 
     matching = interaction_handler.matching_hints(
         hints,
-        current_agent,
-        target_trainer.identity,
+        _pokemon_identity(actor, action.actor_index),
+        _pokemon_identity(target_trainer, action.target_index),
         move.name,
     )
     available_names = [
@@ -682,34 +811,57 @@ def advance_battle():
         if valid:
             valid_hints.append(hint)
 
-    simulate_move(user, target, move_idx)
+    actor.active_index = action.actor_index
+    target_trainer.active_index = action.target_index
+    simulate_move(user, target, action.move_index)
     target_trainer.advance_active()
-    move_logs.append(MoveLogEntry(move, actor.name, npc_a_trainer, npc_b_trainer))
+    move_logs.append(
+        MoveLogEntry(
+            move,
+            actor.name,
+            npc_a_trainer,
+            npc_b_trainer,
+            user.name,
+            target.name,
+        )
+    )
     turn_count += 1
 
     if valid_hints:
         rules = ", ".join(sorted({hint.rule_id for hint in valid_hints}))
         last_interaction = (
-            f"{rules} inferred {actor.name} -> {target_trainer.name}: "
-            f"{move.name}; action executed."
+            f"{rules} inferred {user.name} -> {target.name}: {move.name}; "
+            "action executed."
         )
     elif matching:
         last_interaction = (
             f"The inferred {matching[0].action} intent was invalidated; "
-            f"the search-selected {move.name} action was executed instead."
+            f"the search-selected {user.name} -> {target.name}: {move.name} "
+            "action was executed instead."
         )
-    elif any(hint.actor == current_agent for hint in hints):
-        actor_hints = [hint for hint in hints if hint.actor == current_agent]
+    elif any(
+        hint.actor == current_agent
+        or hint.actor.startswith(f"{current_agent}:")
+        for hint in hints
+    ):
+        actor_hints = [
+            hint
+            for hint in hints
+            if hint.actor == current_agent
+            or hint.actor.startswith(f"{current_agent}:")
+        ]
         hint_summary = ", ".join(
             sorted({f"{hint.rule_id}:{hint.action}" for hint in actor_hints})
         )
         last_interaction = (
-            f"KB inferred {hint_summary}; adversarial search selected {move.name} "
-            "after evaluating the strategic consequences."
+            f"KB inferred {hint_summary}; search selected {user.name} -> "
+            f"{target.name}: {move.name} after evaluating the strategic "
+            "consequences."
         )
     else:
         last_interaction = (
-            f"{actor.name}'s search-selected action was {move.name}; "
+            f"{actor.name}'s search-selected action was {user.name} -> "
+            f"{target.name}: {move.name}; "
             "no applicable inferred intent matched."
         )
 
@@ -720,7 +872,8 @@ def advance_battle():
         current_agent = "NPC_B" if current_agent == "NPC_A" else "NPC_A"
         next_name = npc_a_trainer.name if current_agent == "NPC_A" else npc_b_trainer.name
         battle_text = (
-            f"{actor.name}'s {user.name} used {move.name}.\n"
+            f"{actor.name}'s {user.name} used {move.name} on "
+            f"{target_trainer.name}'s {target.name}.\n"
             f"{next_name} is scheduled. Press SPACE to continue."
         )
         _refresh_inference()
@@ -773,14 +926,11 @@ def draw_battle_text(screen, font):
     sprite = scale_sprite(box, 5, (0, 380))
     screen.blit(sprite[0], sprite[1])
 
-    screen.blit(
-        font.render(
-            battle_text,
-            False,
-            "black",
-        ),
-        (30, 410),
-    )
+    for line_index, line in enumerate(battle_text.splitlines()):
+        screen.blit(
+            font.render(line, False, "black"),
+            (30, 410 + line_index * 26),
+        )
 
 
 def draw_logs(screen, font):
@@ -819,7 +969,11 @@ def draw_logs(screen, font):
             font.render(f"{npc_b_defense:.0f}", False, (0, 0, 150)),
             (805, y + 40),
         )
-        text = font.render(f"{log.move.name}", False, "black")
+        text = font.render(
+            f"{log.actor_pokemon} > {log.target_pokemon}: {log.move.name}",
+            False,
+            "black",
+        )
         side = text.get_rect(topleft=(670, y + 80))
         if log.user == "NPC B":
             side = text.get_rect(topright=(930, y + 80))
@@ -840,22 +994,48 @@ def draw_ai_brain(screen, font):
     screen.blit(font.render(f"AGENT: {last_search['actor']}", False, "black"), (left, 45))
     screen.blit(font.render(f"MODE: {mode_text}", False, "black"), (left, 80))
     screen.blit(font.render(f"DEPTH: {last_search['depth']}", False, "black"), (left, 115))
-    screen.blit(font.render("MOVE / SCORE", False, "black"), (left, 165))
+    action_font = _node_font(14)
+    screen.blit(
+        action_font.render("POKEMON > TARGET / MOVE / SCORE", False, "black"),
+        (left, 165),
+    )
 
     y = 205
-    for action in last_search["action_scores"]:
-        is_best = action["move"] == last_search["best_move"]
+    best_action = last_search["best_action"]
+    ranked_actions = sorted(
+        last_search["action_scores"],
+        key=lambda action: action["score"],
+        reverse=last_search["actor"] == "NPC_A",
+    )
+    for action in ranked_actions[:7]:
+        is_best = (
+            action["actor_index"] == best_action.actor_index
+            and action["target_index"] == best_action.target_index
+            and action["move_index"] == best_action.move_index
+        )
         prefix = ">" if is_best else "-"
         color = (0, 140, 0) if is_best else "black"
         screen.blit(
-            font.render(
-                f"{prefix}{action['name']}: {action['score']:.0f}",
+            action_font.render(
+                f"{prefix}{action['actor']}>{action['target']} "
+                f"{action['name']}: {action['score']:.0f}",
                 False,
                 color,
             ),
             (left, y),
         )
-        y += 38
+        y += 30
+
+    if len(ranked_actions) > 7:
+        screen.blit(
+            action_font.render(
+                f"...{len(ranked_actions) - 7} more in node tree",
+                False,
+                "black",
+            ),
+            (left, y),
+        )
+        y += 30
 
     metrics = last_search["metrics"]
     y += 12
@@ -1282,10 +1462,26 @@ def draw_kb_overlay(screen, font):
                 (16, y),
             )
 
-    intent_facts = [
-        fact for fact in inference_result.facts if fact.predicate == "ActionIntent"
-    ]
-    final = ", ".join(str(fact) for fact in sorted(intent_facts)) or "No ActionIntent is entailed."
+    pokemon_intents = sorted(
+        fact
+        for fact in inference_result.facts
+        if fact.predicate == "PokemonActionIntent"
+    )
+    if pokemon_intents:
+        final = (
+            f"{len(pokemon_intents)} Pokémon intent(s); "
+            f"{pokemon_intents[0]}"
+        )
+    else:
+        action_intents = sorted(
+            fact
+            for fact in inference_result.facts
+            if fact.predicate == "ActionIntent"
+        )
+        final = (
+            ", ".join(str(fact) for fact in action_intents)
+            or "No action intent is entailed."
+        )
     screen.blit(
         detail_font.render(f"Final conclusion: {final[:100]}", False, blue),
         (16, 510),

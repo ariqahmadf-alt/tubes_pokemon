@@ -1,4 +1,4 @@
-"""Validates action intents inferred for the two opposing NPCs."""
+"""Validates inferred NPC-level and Pokémon-level battle action intents."""
 
 from dataclasses import dataclass
 
@@ -16,7 +16,10 @@ class BattleInteractionHandler:
         seen = set()
         for derivation in inference_result.derivations:
             conclusion = derivation.conclusion
-            if conclusion.predicate != "ActionIntent" or conclusion.negated:
+            if conclusion.predicate not in (
+                "ActionIntent",
+                "PokemonActionIntent",
+            ) or conclusion.negated:
                 continue
             if len(conclusion.arguments) != 3:
                 continue

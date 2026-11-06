@@ -29,8 +29,8 @@ Sistem terdiri atas tiga mode utama secara berurutan:
   - **Bound-Pruning** berdasarkan batas atas skor aditif.
 
 - **Pengali Keunggulan Elemen:** Membaca relasi dari `weaknesses.txt` (56 pasangan antarelemen dari 17 elemen) yang diterapkan pada transisi _battle_ (pengali damage 1.5x atau 1/1.5x).
-- **Knowledge-Based Battle Agent:** Fakta dan aturan FOL deklaratif diproses dengan forward chaining, terpisah dari kode inferensi dan logika battle.
-- **Dua NPC Berlawanan:** NPC A dan NPC B bergantian menentukan aksi; SPACE hanya memajukan satu aksi NPC.
+- **Knowledge-Based Battle Agent:** Fakta dan aturan FOL deklaratif diproses dengan forward chaining, termasuk pilihan Pokémon pelaku dan target.
+- **Dua NPC Berlawanan:** NPC A dan NPC B bergantian menentukan Pokémon hidup yang digunakan, target Pokémon lawan untuk serangan, dan move; SPACE hanya memajukan satu aksi NPC.
 
 - **Dual Debug Overlays:** Antarmuka visual mendalam untuk meninjau langkah-langkah pencarian secara interaktif untuk kedua metode AI.
 
@@ -114,9 +114,9 @@ Mode pencarian dan bobot evaluasi diatur pada kode/config; pemain tidak dapat me
 
 ### 1. Battle Knowledge Base
 
-- **Representasi:** Predikat FOL menggunakan identitas `NPC_A` dan `NPC_B`, fakta lawan, kondisi HP, move, dan keunggulan tipe.
+- **Representasi:** Predikat FOL menggunakan identitas `NPC_A` dan `NPC_B`, kepemilikan Pokémon, kondisi Pokémon hidup/HP/move, target, serta keunggulan tipe.
 - **Inferensi:** Forward chaining dengan pencocokan variabel hingga tidak ada fakta baru.
-- **Interaksi:** Tekan `I` selama battle untuk meninjau fakta, rule yang cocok/tidak cocok, substitusi, kesimpulan, serta hasil validasi aksi. Informasi yang tidak diketahui tidak dianggap otomatis salah.
+- **Interaksi:** Pada setiap giliran, pencarian adversarial mengevaluasi Pokémon hidup mana yang bertindak, move yang dipakai, dan target Pokémon lawan untuk serangan. Intent FOL yang spesifik Pokémon memandu urutan pilihan dan hasil aktor/target/move ditampilkan pada battle, log, dan overlay. Tekan `I` untuk meninjau fakta, rule, substitusi, kesimpulan, serta hasil validasi aksi. Informasi yang tidak diketahui tidak dianggap otomatis salah.
 - Sistem battle saat ini belum memiliki status effect atau item; rule status tetap dapat diuji dengan fakta status, tetapi game tidak membuat kondisi status/item fiktif.
 
 ### 2. Local Search (Hill Climbing)
