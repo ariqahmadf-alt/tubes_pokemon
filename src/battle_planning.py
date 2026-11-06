@@ -709,19 +709,35 @@ def plan_battle_turn(
     if not candidates:
         return PlanningDecision(actor.identity, None, None, None, None, None)
 
-    _, goal, goal_object, rule_id = candidates[0]
-    result = _simulated_plan(
-        actor,
-        opponent,
-        goal,
-        goal_object,
-        type_advantages,
-        simulate_move,
-        domain,
-        observed_state,
-        max(time_budget_ms - (time.perf_counter() - started) * 1000, 0),
-        max_expansions,
-    )
+    result = None
+    goal = goal_object = rule_id = None
+    expansions_used = 0
+    for _, candidate_goal, candidate_object, candidate_rule_id in candidates:
+        remaining_time = max(
+            time_budget_ms - (time.perf_counter() - started) * 1000,
+            0,
+        )
+        remaining_expansions = max(max_expansions - expansions_used, 0)
+        candidate_result = _simulated_plan(
+            actor,
+            opponent,
+            candidate_goal,
+            candidate_object,
+            type_advantages,
+            simulate_move,
+            domain,
+            observed_state,
+            remaining_time,
+            remaining_expansions,
+        )
+        expansions_used += candidate_result.stats.get("expanded", 0)
+        goal = candidate_goal
+        goal_object = candidate_object
+        rule_id = candidate_rule_id
+        result = candidate_result
+        if result.status != "no-plan":
+            break
+
     if method == "backward":
         backward_notice = (
             "Exact battle simulation uses forward A* for either method setting."

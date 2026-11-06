@@ -1,9 +1,13 @@
 import unittest
 from copy import deepcopy
+from math import inf
+from unittest.mock import patch
 
 import battle
+import battle_planning
 import config
 from battle_planning import hp_band
+from planning import PlanResult
 
 
 def fresh_pokemon(index):
@@ -142,6 +146,35 @@ class BattlePlanningTests(unittest.TestCase):
                 ),
                 final_state,
             )
+
+    def test_unreachable_finish_goal_falls_back_to_reachable_win_goal(self):
+        for pokemon in battle.npc_a_trainer.pokemon + battle.npc_b_trainer.pokemon:
+            pokemon.element = "poison"
+        battle.npc_b_trainer.pokemon[0].hp = 20
+        real_planner = battle_planning._simulated_plan
+
+        def reject_finish_goal(*args, **kwargs):
+            if args[2] == "finish":
+                return PlanResult(
+                    status="no-plan",
+                    steps=(),
+                    total_cost=0,
+                    method="forward (simulated A*)",
+                    initial_heuristic=inf,
+                    stats={"expanded": 0},
+                    reason="forced unreachable finish goal",
+                )
+            return real_planner(*args, **kwargs)
+
+        with patch(
+            "battle_planning._simulated_plan",
+            side_effect=reject_finish_goal,
+        ):
+            decision = self.decision()
+
+        self.assertEqual(decision.goal, "win")
+        self.assertEqual(decision.result.status, "plan")
+        self.assertIsNotNone(decision.hint)
 
     def test_backward_setting_uses_exact_forward_simulation(self):
         actor, opponent = battle._trainers_for("NPC_B")
