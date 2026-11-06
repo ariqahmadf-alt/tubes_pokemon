@@ -586,7 +586,11 @@ async def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
                     if state == "battle":
-                        if battle.showing_kb and battle.inference_result:
+                        if battle.showing_planning:
+                            battle.planning_trace_step = max(
+                                battle.planning_trace_step - 1, 0
+                            )
+                        elif battle.showing_kb and battle.inference_result:
                             battle.kb_trace_step = max(
                                 battle.kb_trace_step - 1, 0
                             )
@@ -601,7 +605,18 @@ async def main():
                         characters[0].moving_dir = 1
                 elif event.key == pygame.K_DOWN:
                     if state == "battle":
-                        if battle.showing_kb and battle.inference_result:
+                        if battle.showing_planning:
+                            step_count = (
+                                len(battle.last_planning.result.steps)
+                                if battle.last_planning
+                                and battle.last_planning.result
+                                else 0
+                            )
+                            battle.planning_trace_step = min(
+                                battle.planning_trace_step + 1,
+                                max(step_count - 1, 0),
+                            )
+                        elif battle.showing_kb and battle.inference_result:
                             battle.kb_trace_step = min(
                                 battle.kb_trace_step + 1,
                                 max(len(battle.inference_result.evaluations) - 1, 0),
@@ -654,8 +669,19 @@ async def main():
                         state = "select"
                 elif event.key == pygame.K_i and state == "battle":
                     battle.showing_kb = not battle.showing_kb
+                    if battle.showing_kb:
+                        battle.showing_nodes = False
+                        battle.showing_planning = False
                 elif event.key == pygame.K_n and state == "battle":
                     battle.showing_nodes = not battle.showing_nodes
+                    if battle.showing_nodes:
+                        battle.showing_kb = False
+                        battle.showing_planning = False
+                elif event.key == pygame.K_p and state == "battle":
+                    battle.showing_planning = not battle.showing_planning
+                    if battle.showing_planning:
+                        battle.showing_kb = False
+                        battle.showing_nodes = False
                 elif event.key == pygame.K_m:
                     if state == "select":
                         selection.show_debug_overlay = not selection.show_debug_overlay
@@ -723,6 +749,8 @@ async def main():
                 battle.node_overlay(screen, font)
             if battle.showing_kb:
                 battle.draw_kb_overlay(screen, font)
+            if battle.showing_planning:
+                battle.draw_planning_overlay(screen, font)
         elif state == "select":
             selection.draw(screen, font)
             selection.draw_pkmn_stats(screen, font)

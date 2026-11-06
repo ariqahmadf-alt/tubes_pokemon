@@ -8,6 +8,7 @@ from utils import scale_sprite
 from knowledge_base import Atom, KnowledgeBase
 from inference_engine import InferenceEngine
 from battle_interaction import BattleInteractionHandler
+from battle_planning import plan_battle_turn
 
 weakness_path = Path(__file__).parent / "assets" / "weaknesses.txt"
 type_advantages = set()
@@ -28,7 +29,9 @@ chosen_log = 0
 showing_log = True
 showing_nodes = False
 showing_kb = False
+showing_planning = False
 kb_trace_step = 0
+planning_trace_step = 0
 turn_count = 0
 current_agent = "NPC_A"
 battle_started = False
@@ -40,6 +43,7 @@ inference_engine = InferenceEngine()
 knowledge_base = KnowledgeBase.from_json()
 interaction_handler = BattleInteractionHandler()
 inference_result = None
+last_planning = None
 
 
 class MoveLogEntry:
@@ -299,6 +303,25 @@ def _legal_actions(actor, opponent):
                         BattleAction(actor_index, target_index, move_index)
                     )
     return actions
+
+
+def _action_hints(hints, actor, opponent, action, move_name):
+    target_trainer = opponent if move_name.upper() == "ATTACK" else actor
+    specific = interaction_handler.matching_hints(
+        hints,
+        _pokemon_identity(actor, action.actor_index),
+        _pokemon_identity(target_trainer, action.target_index),
+        move_name,
+    )
+    trainer_level = interaction_handler.matching_hints(
+        hints,
+        actor.identity,
+        target_trainer.identity,
+        move_name,
+    )
+    if not config.use_planning:
+        return specific
+    return tuple(dict.fromkeys(specific + trainer_level))
 
 
 def simulate_move(actor, enemy, move_idx):
@@ -570,6 +593,7 @@ def start_battle():
     global npc_a_trainer, npc_b_trainer, battle_started, battle_over
     global battle_winner, current_agent, turn_count, move_logs, chosen_log
     global last_search, last_interaction, battle_text, showing_kb, showing_nodes
+    global showing_planning, planning_trace_step, last_planning
 
     if player_trainer is None or rival_trainer is None:
         raise RuntimeError("Pre-battle rosters are unavailable.")
@@ -596,11 +620,14 @@ def start_battle():
     last_interaction = "No interaction has been executed."
     showing_kb = False
     showing_nodes = False
+    showing_planning = False
+    planning_trace_step = 0
+    last_planning = None
     _refresh_inference()
     battle_text = "NPC A is scheduled to act. Press SPACE to advance."
 
 
-def choose_action(actor_id, depth=2, mode="minimax", hints=()):
+def choose_action(actor_id, depth=2, mode="minimax", hints=(), plan_hint=None):
     global last_search
     actor, opponent = _trainers_for(actor_id)
     if actor.is_defeated or opponent.is_defeated:
@@ -613,18 +640,19 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=()):
     def is_hinted(action):
         user = actor.pokemon[action.actor_index]
         move = user.moves[action.move_index]
-        target_trainer = opponent if move.name.upper() == "ATTACK" else actor
-        return bool(
-            interaction_handler.matching_hints(
-                hints,
-                _pokemon_identity(actor, action.actor_index),
-                _pokemon_identity(target_trainer, action.target_index),
-                move.name,
-            )
-        )
+        return bool(_action_hints(hints, actor, opponent, action, move.name))
 
     actions.sort(
         key=lambda action: (
+            not (
+                plan_hint is not None
+                and action.actor_index == plan_hint.actor_index
+                and action.target_index == plan_hint.target_index
+                and actor.pokemon[action.actor_index]
+                .moves[action.move_index]
+                .name.upper()
+                == plan_hint.move_name
+            ),
             not is_hinted(action),
             action.actor_index,
             action.target_index,
@@ -714,8 +742,45 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=()):
     root["value"] = best_score
     root["alpha"] = alpha
     root["beta"] = beta
-    if best_action is not None:
-        chosen_label = _action_label(actor, opponent, best_action)
+    selected_action = best_action
+    plan_action_score = None
+    plan_followed = False
+    if plan_hint is not None:
+        planned_action = BattleAction(
+            plan_hint.actor_index,
+            plan_hint.target_index,
+            next(
+                index
+                for index, move in enumerate(
+                    actor.pokemon[plan_hint.actor_index].moves
+                )
+                if move.name.upper() == plan_hint.move_name
+            ),
+        )
+        plan_score_entry = next(
+            (
+                item
+                for item in action_scores
+                if item["actor_index"] == planned_action.actor_index
+                and item["target_index"] == planned_action.target_index
+                and item["move_index"] == planned_action.move_index
+            ),
+            None,
+        )
+        if plan_score_entry is not None:
+            plan_action_score = plan_score_entry["score"]
+            tolerance = max(float(config.plan_tolerance), 0)
+            plan_is_near_best = (
+                plan_action_score >= best_score - tolerance
+                if maximizing
+                else plan_action_score <= best_score + tolerance
+            )
+            if plan_is_near_best:
+                selected_action = planned_action
+                plan_followed = True
+
+    if selected_action is not None:
+        chosen_label = _action_label(actor, opponent, selected_action)
         for child in root["children"]:
             if child["label"] == chosen_label:
                 node = child
@@ -738,10 +803,14 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=()):
         "depth": depth,
         "action_scores": action_scores,
         "best_action": best_action,
+        "selected_action": selected_action,
+        "plan_action_score": plan_action_score,
+        "plan_followed": plan_followed,
+        "best_score": best_score,
         "metrics": metrics,
         "tree": root,
     }
-    return best_action
+    return selected_action
 
 
 def _finish_battle():
@@ -757,7 +826,8 @@ def _finish_battle():
 
 
 def advance_battle():
-    global current_agent, turn_count, battle_text, last_interaction
+    global current_agent, turn_count, battle_text, last_interaction, last_planning
+    global planning_trace_step
 
     if not battle_started or battle_over:
         return False
@@ -771,8 +841,28 @@ def advance_battle():
     actor, opponent = _trainers_for(current_agent)
     result = _refresh_inference()
     hints = interaction_handler.hints_from(result)
+    decision = None
+    plan_hint = None
+    if config.use_planning:
+        decision = plan_battle_turn(
+            actor,
+            opponent,
+            result,
+            type_advantages,
+            simulate_move,
+            method=config.planner_method,
+            heuristic=config.planner_heuristic,
+            max_expansions=config.planner_max_expansions,
+        )
+        last_planning = decision
+        planning_trace_step = 0
+        plan_hint = decision.hint
     action = choose_action(
-        current_agent, depth=2, mode=config.ai_type, hints=hints
+        current_agent,
+        depth=2,
+        mode=config.ai_type,
+        hints=hints,
+        plan_hint=plan_hint,
     )
     if action is None:
         return False
@@ -788,10 +878,11 @@ def advance_battle():
         )
         return False
 
-    matching = interaction_handler.matching_hints(
+    matching = _action_hints(
         hints,
-        _pokemon_identity(actor, action.actor_index),
-        _pokemon_identity(target_trainer, action.target_index),
+        actor,
+        opponent,
+        action,
         move.name,
     )
     available_names = [
@@ -801,10 +892,20 @@ def advance_battle():
     ]
     valid_hints = []
     for hint in matching:
+        hint_actor = (
+            actor.identity
+            if hint.actor == actor.identity
+            else _pokemon_identity(actor, action.actor_index)
+        )
+        hint_target = (
+            target_trainer.identity
+            if hint.target == target_trainer.identity
+            else _pokemon_identity(target_trainer, action.target_index)
+        )
         valid, _ = interaction_handler.validate(
             hint,
-            current_agent,
-            target_trainer.identity,
+            hint_actor,
+            hint_target,
             move.name,
             available_names,
         )
@@ -864,6 +965,35 @@ def advance_battle():
             f"{target.name}: {move.name}; "
             "no applicable inferred intent matched."
         )
+    if decision is not None and decision.goal and decision.result is not None:
+        result_summary = decision.result.status
+        plan_length = len(decision.result.steps)
+        if plan_hint is None:
+            plan_summary = (
+                f"Plan {decision.goal} via {decision.rule_id}: "
+                f"{result_summary} ({plan_length} steps); "
+                f"{decision.result.reason or 'no usable first step'}."
+            )
+        else:
+            plan_score = last_search["plan_action_score"]
+            best_score = last_search["best_score"]
+            if last_search["plan_followed"]:
+                plan_summary = (
+                    f"Plan {decision.goal} via {decision.rule_id}: "
+                    f"{plan_length} steps; first step followed "
+                    f"(score {plan_score:.0f}, best {best_score:.0f})."
+                )
+            else:
+                plan_summary = (
+                    f"Plan {decision.goal} via {decision.rule_id}: "
+                    f"{plan_length} steps; search overrode first step "
+                    f"(score {plan_score:.0f}, best {best_score:.0f})."
+                )
+        last_interaction = f"{last_interaction} {plan_summary}"
+    elif decision is not None:
+        last_interaction = (
+            f"{last_interaction} No planning goal was derived by the KB."
+        )
 
     if npc_a_trainer.is_defeated or npc_b_trainer.is_defeated:
         _finish_battle()
@@ -876,6 +1006,18 @@ def advance_battle():
             f"{target_trainer.name}'s {target.name}.\n"
             f"{next_name} is scheduled. Press SPACE to continue."
         )
+        if decision is not None and decision.goal and decision.result is not None:
+            followed_text = (
+                "followed"
+                if last_search["plan_followed"]
+                else "overridden"
+                if plan_hint is not None
+                else "unavailable"
+            )
+            battle_text += (
+                f"\nPlan {decision.goal} ({decision.rule_id}, "
+                f"{len(decision.result.steps)} steps): {followed_text}."
+            )
         _refresh_inference()
     return True
 
@@ -1001,7 +1143,7 @@ def draw_ai_brain(screen, font):
     )
 
     y = 205
-    best_action = last_search["best_action"]
+    best_action = last_search["selected_action"]
     ranked_actions = sorted(
         last_search["action_scores"],
         key=lambda action: action["score"],
@@ -1492,3 +1634,191 @@ def draw_kb_overlay(screen, font):
     )
     winner = f"Winner: {battle_winner}" if battle_over else "Winner: undecided"
     screen.blit(detail_font.render(winner, False, blue), (16, 554))
+
+
+def draw_planning_overlay(screen, font):
+    width, height = screen.get_size()
+    panel = pygame.Surface((width, height), pygame.SRCALPHA)
+    panel.fill((248, 250, 255, 246))
+    screen.blit(panel, (0, 0))
+    title_font = _node_font(19)
+    detail_font = _node_font(14)
+    muted = (75, 85, 100)
+    blue = (25, 80, 155)
+    green = (0, 125, 45)
+    orange = (175, 95, 0)
+
+    screen.blit(
+        title_font.render("AUTOMATED BATTLE PLANNING", False, "black"),
+        (16, 8),
+    )
+    screen.blit(
+        detail_font.render(
+            "[P] CLOSE   UP/DOWN: SELECT A PLAN STEP",
+            False,
+            muted,
+        ),
+        (16, 34),
+    )
+
+    decision = last_planning
+    if decision is None:
+        screen.blit(
+            detail_font.render(
+                "No planning run has been recorded. Advance one NPC turn.",
+                False,
+                muted,
+            ),
+            (16, 75),
+        )
+        return
+    screen.blit(
+        detail_font.render(
+            f"ACTOR: {decision.actor} | GOAL: "
+            f"{decision.goal or 'none'}"
+            f"{f' ({decision.goal_object})' if decision.goal_object else ''} | "
+            f"KB RULE: {decision.rule_id or 'none'}",
+            False,
+            blue,
+        ),
+        (16, 62),
+    )
+    plan_result = decision.result
+    if plan_result is None:
+        screen.blit(
+            detail_font.render(
+                "No PlanGoal was derived from the current knowledge base.",
+                False,
+                orange,
+            ),
+            (16, 92),
+        )
+        return
+
+    status_color = green if plan_result.status == "plan" else orange
+    screen.blit(
+        detail_font.render(
+            f"STATUS: {plan_result.status} | METHOD: {plan_result.method} | "
+            f"PLAN LENGTH: {len(plan_result.steps)} | COST: "
+            f"{plan_result.total_cost:g}",
+            False,
+            status_color,
+        ),
+        (16, 88),
+    )
+
+    screen.blit(
+        detail_font.render(
+            "STEP   ACTION                         PRECONDITIONS",
+            False,
+            blue,
+        ),
+        (16, 124),
+    )
+    selected_index = min(
+        planning_trace_step, max(len(plan_result.steps) - 1, 0)
+    )
+    visible_steps = plan_result.steps[:9]
+    for index, step in enumerate(visible_steps):
+        selected = index == selected_index
+        prefix = ">" if selected else " "
+        color = green if selected else "black"
+        action_text = str(step.action)
+        preconditions = ", ".join(
+            str(fact) for fact in step.preconditions
+        )
+        screen.blit(
+            detail_font.render(
+                f"{prefix}{index + 1:02}   {action_text[:29]:29} "
+                f"{preconditions[:60]}",
+                False,
+                color,
+            ),
+            (16, 148 + index * 20),
+        )
+    if len(plan_result.steps) > len(visible_steps):
+        screen.blit(
+            detail_font.render(
+                f"... {len(plan_result.steps) - len(visible_steps)} more steps",
+                False,
+                muted,
+            ),
+            (16, 148 + len(visible_steps) * 20),
+        )
+
+    if plan_result.steps:
+        selected_step = plan_result.steps[selected_index]
+        state_facts = sorted(
+            (
+                fact
+                for fact in selected_step.state
+                if fact[0] in ("hp", "shielded", "unshielded")
+            ),
+            key=lambda fact: tuple(str(part) for part in fact),
+        )
+        state_summary = ", ".join(
+            str(fact) for fact in state_facts
+        )
+        detail_y = 350
+        screen.blit(
+            detail_font.render(
+                f"RESULT(s, a) AFTER STEP {selected_index + 1}: "
+                f"{state_summary[:110]}",
+                False,
+                blue,
+            ),
+            (16, detail_y),
+        )
+        if len(state_summary) > 110:
+            screen.blit(
+                detail_font.render(state_summary[110:220], False, blue),
+                (16, detail_y + 20),
+            )
+
+    stats = plan_result.stats
+    heuristic_text = (
+        "inf"
+        if plan_result.initial_heuristic == inf
+        else f"{plan_result.initial_heuristic:g}"
+    )
+    stats_text = (
+        f"EXPANDED: {stats['expanded']} | GENERATED: {stats['generated']} | "
+        f"h(initial): {heuristic_text} | "
+        f"GRAPH LEVELS: {stats['levels']} | "
+        f"ACTION MUTEX: {stats['action_mutexes']} | "
+        f"FACT MUTEX: {stats['fact_mutexes']} | "
+        f"ELAPSED: {stats['elapsed_ms']:.2f} ms"
+    )
+    screen.blit(
+        detail_font.render(stats_text[:122], False, muted),
+        (16, 410),
+    )
+    if plan_result.reason:
+        screen.blit(
+            detail_font.render(
+                f"REASON: {plan_result.reason[:120]}",
+                False,
+                orange,
+            ),
+            (16, 438),
+        )
+    if last_search and last_search.get("plan_followed"):
+        outcome = "Plan's first step followed by adversarial search."
+        outcome_color = green
+    elif last_search and last_search.get("plan_action_score") is not None:
+        outcome = (
+            "Plan's first step overridden by adversarial search "
+            f"(planned {last_search['plan_action_score']:.0f}, "
+            f"best {last_search['best_score']:.0f})."
+        )
+        outcome_color = orange
+    elif decision.hint is None:
+        outcome = "No executable plan step; adversarial search selected the action."
+        outcome_color = muted
+    else:
+        outcome = "Planning result has not been applied to a battle turn."
+        outcome_color = muted
+    screen.blit(
+        detail_font.render(outcome[:120], False, outcome_color),
+        (16, 466),
+    )

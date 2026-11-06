@@ -18,6 +18,7 @@ def fresh_pokemon(index):
 class TwoNPCBattleTests(unittest.TestCase):
     def setUp(self):
         self.previous_ai_type = config.ai_type
+        self.previous_use_planning = config.use_planning
         config.ai_type = "minimax"
         battle.player_trainer = battle.Trainer(
             "draft NPC A", [fresh_pokemon(0), fresh_pokemon(1)]
@@ -30,6 +31,7 @@ class TwoNPCBattleTests(unittest.TestCase):
 
     def tearDown(self):
         config.ai_type = self.previous_ai_type
+        config.use_planning = self.previous_use_planning
 
     def test_battle_state_has_only_two_independent_npc_participants(self):
         self.assertIsNone(battle.player_trainer)
@@ -49,6 +51,29 @@ class TwoNPCBattleTests(unittest.TestCase):
         self.assertTrue(battle.advance_battle())
         self.assertEqual(battle.turn_count, 2)
         self.assertEqual(battle.current_agent, "NPC_A")
+
+    def test_disabling_planning_preserves_the_search_selected_action(self):
+        config.use_planning = False
+        inference_result = battle._refresh_inference()
+        hints = battle.interaction_handler.hints_from(inference_result)
+        expected = battle.choose_action(
+            "NPC_A", depth=2, mode="minimax", hints=hints
+        )
+        expected_user = battle.npc_a_trainer.pokemon[expected.actor_index]
+        expected_move = expected_user.moves[expected.move_index].name
+        expected_target_trainer = (
+            battle.npc_b_trainer
+            if expected_move.upper() == "ATTACK"
+            else battle.npc_a_trainer
+        )
+        expected_target = expected_target_trainer.pokemon[expected.target_index].name
+
+        self.assertTrue(battle.advance_battle())
+
+        log = battle.move_logs[-1]
+        self.assertEqual(log.actor_pokemon, expected_user.name)
+        self.assertEqual(log.target_pokemon, expected_target)
+        self.assertEqual(log.move.name, expected_move)
 
     def test_alpha_beta_preserves_minimax_scores_for_both_roles(self):
         state_a = deepcopy(battle.npc_a_trainer)

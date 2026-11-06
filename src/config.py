@@ -14,3 +14,10 @@ rival_speed = 2
 # 0 - minimax (alpha-beta no pruning)
 # 1 - alpha-beta (w/ pruning)
 ai_type = "alpha-beta"
+
+# Optional STRIPS planning layer for battle action suggestions.
+use_planning = True
+planner_method = "forward"
+planner_heuristic = "h_add"  # Use "h_max" for admissible, optimal A* plans.
+plan_tolerance = 50
+planner_max_expansions = 2500

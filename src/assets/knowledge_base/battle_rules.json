@@ -175,6 +175,63 @@
         "predicate": "PokemonActionIntent",
         "args": ["?pokemon", "?pokemon", "HEAL"]
       }
+    },
+    {
+      "id": "G1",
+      "description": "Choose a recovery goal for a living low-HP Pokémon with a healing move.",
+      "conditions": [
+        {"predicate": "Controls", "args": ["?actor", "?pokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?pokemon"]},
+        {"predicate": "LowHP", "args": ["?pokemon"]},
+        {"predicate": "HasHealingMove", "args": ["?pokemon"]}
+      ],
+      "conclusion": {
+        "predicate": "PlanGoal",
+        "args": ["?actor", "recover", "?pokemon"]
+      }
+    },
+    {
+      "id": "G2",
+      "description": "Choose a finish goal for a low-HP opposing Pokémon.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?opponent"]},
+        {"predicate": "Controls", "args": ["?opponent", "?pokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?pokemon"]},
+        {"predicate": "LowHP", "args": ["?pokemon"]}
+      ],
+      "conclusion": {
+        "predicate": "PlanGoal",
+        "args": ["?actor", "finish", "?pokemon"]
+      }
+    },
+    {
+      "id": "G3",
+      "description": "Choose a finish goal when a living teammate has type advantage.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?opponent"]},
+        {"predicate": "Controls", "args": ["?actor", "?attacker"]},
+        {"predicate": "Controls", "args": ["?opponent", "?pokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?attacker"]},
+        {"predicate": "AlivePokemon", "args": ["?pokemon"]},
+        {"predicate": "HasTypeAdvantage", "args": ["?attacker", "?pokemon"]}
+      ],
+      "conclusion": {
+        "predicate": "PlanGoal",
+        "args": ["?actor", "finish", "?pokemon"]
+      }
+    },
+    {
+      "id": "G4",
+      "description": "Choose a team victory goal while an opponent Pokémon remains alive.",
+      "conditions": [
+        {"predicate": "Opponent", "args": ["?actor", "?opponent"]},
+        {"predicate": "Controls", "args": ["?opponent", "?pokemon"]},
+        {"predicate": "AlivePokemon", "args": ["?pokemon"]}
+      ],
+      "conclusion": {
+        "predicate": "PlanGoal",
+        "args": ["?actor", "win", "?pokemon"]
+      }
     }
   ]
 }

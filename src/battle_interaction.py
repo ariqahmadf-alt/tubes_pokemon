@@ -10,6 +10,18 @@ class ActionHint:
     rule_id: str
 
 
+@dataclass(frozen=True)
+class PlanHint:
+    actor: str
+    goal: str
+    goal_object: str
+    rule_id: str
+    action_name: str
+    actor_index: int
+    target_index: int
+    move_name: str
+
+
 class BattleInteractionHandler:
     def hints_from(self, inference_result):
         hints = []
