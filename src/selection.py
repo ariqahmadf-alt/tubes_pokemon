@@ -1,5 +1,6 @@
 import pygame
 import battle
+import uncertainty
 from utils import scale_sprite
 from utils import scale_sprite_vec2
 from copy import deepcopy
@@ -21,6 +22,7 @@ show_csp_debug_overlay = False
 csp_debug_steps = []
 csp_debug_step_index = 0
 csp_debug_run = None
+show_uncertainty_overlay = False
 
 
 def choose_rival_team():
@@ -239,7 +241,7 @@ def choose_rival_team():
     return None
 
 
-# This function chooses a rival team based on the player's team and the weaknesses/advantages of each Pokemon type. It reads a file containing type advantages, scores potential rival teams against the player's team, and uses a hill-climbing algorithm to find the best possible rival team. The chosen team is then assigned to the rival trainer in the battle.
+# Existing steepest-ascent Local Search uses Expected Utility as its fitness.
 def choose_rival_team_old():
     global debug_steps, debug_step_index, debug_run
 
@@ -247,18 +249,9 @@ def choose_rival_team_old():
     team_size = len(battle.rival_trainer.pokemon)
     candidates = [pokemon for pokemon in battle.pokemons if pokemon not in player_team]
 
-    def score(team):
-        return sum(
-            int(
-                (rival_pokemon.element, player_pokemon.element)
-                in battle.type_advantages
-            )
-            - int(
-                (player_pokemon.element, rival_pokemon.element)
-                in battle.type_advantages
-            )
-            for rival_pokemon in team
-            for player_pokemon in player_team
+    def evaluate(team):
+        return uncertainty.evaluate_team(
+            team, player_team, battle.type_advantages
         )
 
     # Keep the current rival roster as the starting state when it is valid.
@@ -275,19 +268,26 @@ def choose_rival_team_old():
     # Record a snapshot of the inputs before the rival roster changes.
     debug_steps = []
     debug_step_index = 0
+    initial_evaluation = evaluate(team)
     debug_run = {
         "player": [(pokemon.name, pokemon.element) for pokemon in player_team],
         "candidate_count": len(candidates),
-        "initial_score": score(team),
+        "initial_score": initial_evaluation.expected_utility,
         "initial_team": [pokemon.name for pokemon in team],
     }
 
-    # Steepest-ascent hill climbing: replace one team member with an unused
-    # candidate whenever that produces the largest matchup-score improvement.
+    # Steepest-ascent hill climbing keeps its existing neighborhood and accepts
+    # only swaps that improve the expected balance utility.
+    previous_expected_utility = None
     while True:
-        current_score = score(team)
+        current_evaluation = evaluate(team)
+        current_score = current_evaluation.expected_utility
         best_team = team
         best_score = current_score
+        best_evaluation = current_evaluation
+        best_neighbor_team = team
+        best_neighbor_score = None
+        best_neighbor_evaluation = None
         tested_moves = []  # Debug data only; does not affect the search.
 
         for slot in range(team_size):
@@ -296,19 +296,31 @@ def choose_rival_team_old():
                     continue
                 neighbor = team.copy()
                 neighbor[slot] = candidate
-                neighbor_score = score(neighbor)
+                neighbor_evaluation = evaluate(neighbor)
+                neighbor_score = neighbor_evaluation.expected_utility
                 tested_moves.append(
                     {
                         "score": neighbor_score,
                         "slot": slot,
                         "old": team[slot].name,
                         "new": candidate.name,
+                        "team": [pokemon.name for pokemon in neighbor],
+                        "evaluation": neighbor_evaluation,
                     }
                 )
+                if (
+                    best_neighbor_score is None
+                    or neighbor_score > best_neighbor_score
+                ):
+                    best_neighbor_team = neighbor
+                    best_neighbor_score = neighbor_score
+                    best_neighbor_evaluation = neighbor_evaluation
                 if neighbor_score > best_score:
                     best_team = neighbor
                     best_score = neighbor_score
+                    best_evaluation = neighbor_evaluation
 
+        accepted = best_score > current_score
         winning_swap = next(
             (
                 (slot, team[slot].name, best_team[slot].name)
@@ -320,12 +332,31 @@ def choose_rival_team_old():
         debug_steps.append(
             {
                 "team": [
-                    (pokemon.name, pokemon.element, score([pokemon]))
+                    (
+                        pokemon.name,
+                        pokemon.element,
+                        evaluate([pokemon]).expected_utility,
+                    )
                     for pokemon in team
                 ],
                 "score": current_score,
-                "best_score": best_score,
+                "best_score": (
+                    best_neighbor_score
+                    if best_neighbor_score is not None
+                    else current_score
+                ),
                 "winning_swap": winning_swap,
+                "accepted": accepted,
+                "current_evaluation": current_evaluation,
+                "candidate_evaluation": (
+                    best_neighbor_evaluation
+                    if best_neighbor_evaluation is not None
+                    else best_evaluation
+                ),
+                "candidate_team": [
+                    pokemon.name for pokemon in best_neighbor_team
+                ],
+                "previous_expected_utility": previous_expected_utility,
                 "evaluated": len(tested_moves),
                 "top_moves": sorted(
                     tested_moves, key=lambda move: move["score"], reverse=True
@@ -333,11 +364,12 @@ def choose_rival_team_old():
             }
         )
 
-        if best_score == current_score:
+        if not accepted:
             break
         team = best_team
+        previous_expected_utility = best_score
 
-    debug_run["final_score"] = score(team)
+    debug_run["final_score"] = evaluate(team).expected_utility
     debug_run["final_team"] = [pokemon.name for pokemon in team]
     debug_run["total_evaluated"] = sum(step["evaluated"] for step in debug_steps)
     debug_step_index = len(debug_steps) - 1
@@ -403,9 +435,9 @@ def draw_debug_overlay(screen):
         return
 
     step = debug_steps[debug_step_index]
-    last_step = debug_step_index == len(debug_steps) - 1
     label(
-        f"START {debug_run['initial_score']:+d}  >  FINAL {debug_run['final_score']:+d}",
+        f"START {debug_run['initial_score']:+.2f}  >  "
+        f"FINAL {debug_run['final_score']:+.2f}",
         left,
         panel.y + 99,
         green,
@@ -437,13 +469,20 @@ def draw_debug_overlay(screen):
         cyan,
     )
     label(
-        f"Current score: {step['score']:+d}    Best neighbor: {step['best_score']:+d}",
+        f"Current EU: {step['score']:+.2f}    "
+        f"Best neighbor EU: {step['best_score']:+.2f}",
         left,
         panel.y + 201,
         white,
     )
 
-    label("Individual matchup scores:", left, panel.y + 242, muted, small)
+    label(
+        "Singleton expected utility (not additive):",
+        left,
+        panel.y + 242,
+        muted,
+        small,
+    )
     for i, (name, element, contribution) in enumerate(step["team"]):
         if i >= 5:
             label(
@@ -463,7 +502,7 @@ def draw_debug_overlay(screen):
             290,
         )
         label(
-            f"{contribution:+d}",
+            f"{contribution:+.2f}",
             left + 345,
             panel.y + 269 + i * 28,
             (
@@ -494,7 +533,8 @@ def draw_debug_overlay(screen):
             410,
         )
         label(
-            f"Gain: +{step['best_score'] - step['score']}",
+            f"Expected-utility gain: "
+            f"{step['best_score'] - step['score']:+.2f}",
             left,
             detail_y + 24,
             green,
@@ -524,8 +564,8 @@ def draw_debug_overlay(screen):
             (int(point[0]), int(point[1])),
             5 if i == debug_step_index else 3,
         )
-    label(f"min {lo:+d}", chart.x + 8, chart.bottom + 3, muted, small)
-    label(f"max {hi:+d}", chart.right - 77, chart.bottom + 3, muted, small)
+    label(f"min {lo:+.2f}", chart.x + 8, chart.bottom + 3, muted, small)
+    label(f"max {hi:+.2f}", chart.right - 77, chart.bottom + 3, muted, small)
 
     label(
         f"TOP TESTED SWAPS ({step['evaluated']} evaluated)",
@@ -537,7 +577,8 @@ def draw_debug_overlay(screen):
     for i, move in enumerate(step["top_moves"][:3]):
         delta = move["score"] - step["score"]
         label(
-            f"{move['score']:+d} ({delta:+d})  {move['old']} > {move['new']}",
+            f"{move['score']:+.2f} ({delta:+.2f})  "
+            f"{move['old']} > {move['new']}",
             chart_x + 6,
             panel.y + 446 + 25 * i,
             green if delta > 0 else muted,
@@ -548,6 +589,173 @@ def draw_debug_overlay(screen):
         label(
             "No valid replacement candidates.", chart_x + 6, panel.y + 446, muted, small
         )
+
+
+def draw_uncertainty_overlay(screen):
+    if not show_uncertainty_overlay:
+        return
+
+    width, height = screen.get_size()
+    panel = pygame.Rect(20, 20, width - 40, height - 40)
+    box, rect = scale_sprite_vec2(bigbox, (4.6, 2.75), (20, 20), 0)
+    screen.blit(box, rect)
+
+    global _debug_fonts
+    if _debug_fonts is None:
+        _debug_fonts = (
+            pygame.font.Font("assets/pkmn.ttf", 24),
+            pygame.font.Font("assets/pkmn.ttf", 18),
+            pygame.font.Font("assets/pkmn.ttf", 15),
+        )
+    title_font, font, small = _debug_fonts
+    black = (0, 0, 0)
+    muted = (66, 87, 106)
+    blue = (20, 0, 250)
+    green = (0, 150, 0)
+    gold = (150, 100, 0)
+
+    def label(text, x, y, color=black, face=font, max_width=None):
+        text = str(text)
+        if max_width is not None and face.size(text)[0] > max_width:
+            while text and face.size(text + "...")[0] > max_width:
+                text = text[:-1]
+            text += "..."
+        screen.blit(face.render(text, True, color), (x, y))
+
+    left = panel.x + 26
+    right = panel.right - 26
+    label("DECISIONS UNDER UNCERTAINTY", left, panel.y + 19, blue, title_font)
+    pygame.draw.line(
+        screen, (66, 87, 106), (left, panel.y + 83), (right, panel.y + 83), 1
+    )
+
+    if not debug_steps or debug_run is None:
+        label(
+            "Selection phase. Press SPACE to generate the CSP seed and run Local Search.",
+            left,
+            panel.y + 116,
+            muted,
+            small,
+            panel.width - 52,
+        )
+        return
+
+    step = debug_steps[debug_step_index]
+    current_evaluation = step["current_evaluation"]
+    candidate_evaluation = step["candidate_evaluation"]
+    decision_color = green if step["accepted"] else gold
+    candidate_text = ", ".join(step["candidate_team"])
+    final_text = ", ".join(debug_run["final_team"])
+
+    label("Phase: Selection", left, panel.y + 97, muted, small)
+    label(
+        f"Iteration {debug_step_index + 1} / {len(debug_steps)}",
+        left + 270,
+        panel.y + 97,
+        blue,
+        small,
+    )
+    label(
+        f"Current rival team: {', '.join(step['team'][i][0] for i in range(len(step['team'])))}",
+        left,
+        panel.y + 126,
+        black,
+        small,
+        panel.width - 52,
+    )
+    label(
+        f"Current EU: {current_evaluation.expected_utility:+.2f}",
+        left,
+        panel.y + 153,
+        black,
+        small,
+    )
+    previous = step["previous_expected_utility"]
+    previous_text = f"{previous:+.2f}" if previous is not None else "N/A"
+    label(
+        f"Previous EU: {previous_text}    Candidate EU: "
+        f"{candidate_evaluation.expected_utility:+.2f}",
+        left + 270,
+        panel.y + 153,
+        black,
+        small,
+    )
+    decision = "ACCEPTED" if step["accepted"] else "REJECTED (no improvement)"
+    best_so_far_utility = (
+        candidate_evaluation.expected_utility
+        if step["accepted"]
+        else current_evaluation.expected_utility
+    )
+    label(
+        f"Local Search: {decision}    Best-so-far EU: {best_so_far_utility:+.2f}",
+        left,
+        panel.y + 180,
+        decision_color,
+        small,
+    )
+    label(
+        f"Best neighbor candidate: {candidate_text}",
+        left,
+        panel.y + 207,
+        green,
+        small,
+        panel.width - 52,
+    )
+    pygame.draw.line(
+        screen, (66, 87, 106), (left, panel.y + 235), (right, panel.y + 235), 1
+    )
+
+    evaluation = candidate_evaluation
+    label("Outcome scenario", left, panel.y + 246, muted, small)
+    label("P(outcome)", left + 390, panel.y + 246, muted, small)
+    label("Margin", left + 510, panel.y + 246, muted, small)
+    label("Utility", left + 620, panel.y + 246, muted, small)
+    label("P x U", left + 735, panel.y + 246, muted, small)
+    for index, scenario in enumerate(evaluation.scenarios):
+        y = panel.y + 274 + index * 29
+        label(scenario.name, left, y, black, small, 365)
+        label(f"{scenario.probability:.3f}", left + 390, y, black, small)
+        label(f"{scenario.matchup_margin:+d}", left + 510, y, black, small)
+        label(f"{scenario.utility:+.2f}", left + 620, y, black, small)
+        label(f"{scenario.contribution:+.2f}", left + 735, y, black, small)
+
+    normalized = "yes" if evaluation.probabilities_normalized else "NO"
+    probability_total = sum(
+        scenario.probability for scenario in evaluation.scenarios
+    )
+    label(
+        f"Expected Utility: {evaluation.expected_utility:+.2f}    "
+        f"Probability total: {probability_total:.3f} (normalized: {normalized})",
+        left,
+        panel.y + 373,
+        green,
+        small,
+    )
+    label(
+        f"Selected configuration: {final_text}",
+        left,
+        panel.y + 406,
+        green,
+        small,
+        panel.width - 52,
+    )
+    label(
+        f"Scenario prior: {uncertainty.PROBABILITY_SOURCE}",
+        left,
+        panel.y + 440,
+        muted,
+        small,
+        panel.width - 52,
+    )
+    label(
+        "Utility = -abs(type-matchup margin): zero is balanced; extreme "
+        "advantages or disadvantages reduce utility.",
+        left,
+        panel.y + 465,
+        muted,
+        small,
+        panel.width - 52,
+    )
 
 
 def move_csp_debug_step(amount):
