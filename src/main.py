@@ -756,10 +756,10 @@ async def main():
         elif state == "battle":
             battle.draw_pokemon(screen, stat_font)
             battle.draw_battle_text(screen, font)
-            if battle.showing_log:
-                battle.draw_logs(screen, font)
-            else:
-                battle.draw_ai_brain(screen, font)
+            # if battle.showing_log:
+            #     battle.draw_logs(screen, font)
+            # else:
+            #     battle.draw_ai_brain(screen, font)
             if battle.showing_nodes:
                 battle.node_overlay(screen, font)
             if battle.showing_kb:

@@ -123,6 +123,7 @@ class Pokemon:
         self.idx = -1
         self.element = element
 
+
 # load all 10 pokemon
 pokemons = [
     Pokemon(
@@ -289,9 +290,7 @@ def _legal_actions(actor, opponent):
             continue
         for move_index in available_moves(pokemon):
             move = pokemon.moves[move_index]
-            target_trainer = (
-                opponent if move.name.upper() == "ATTACK" else actor
-            )
+            target_trainer = opponent if move.name.upper() == "ATTACK" else actor
             target_indices = (
                 range(len(target_trainer.pokemon))
                 if target_trainer is opponent
@@ -299,9 +298,7 @@ def _legal_actions(actor, opponent):
             )
             for target_index in target_indices:
                 if target_trainer.pokemon[target_index].hp > 0:
-                    actions.append(
-                        BattleAction(actor_index, target_index, move_index)
-                    )
+                    actions.append(BattleAction(actor_index, target_index, move_index))
     return actions
 
 
@@ -356,8 +353,7 @@ def_weight = 2
 
 def _team_score(trainer):
     return sum(
-        pokemon.hp * hp_weight
-        + (pokemon.defense * def_weight if pokemon.hp > 0 else 0)
+        pokemon.hp * hp_weight + (pokemon.defense * def_weight if pokemon.hp > 0 else 0)
         for pokemon in trainer.pokemon
     )
 
@@ -494,9 +490,7 @@ def minimax(npc_a_state, npc_b_state, depth, maximizing=True):
 
 
 def alpha_beta(npc_a_state, npc_b_state, depth, alpha, beta, maximizing=True):
-    return _search(
-        npc_a_state, npc_b_state, depth, maximizing, alpha, beta, True
-    )
+    return _search(npc_a_state, npc_b_state, depth, maximizing, alpha, beta, True)
 
 
 def _trainers_for(actor_id):
@@ -516,9 +510,7 @@ def _observed_facts():
             if pokemon.hp <= 0:
                 continue
             facts.append(Atom("AlivePokemon", (identity,)))
-            usable_moves = [
-                move for move in pokemon.moves if move.pp != 0
-            ]
+            usable_moves = [move for move in pokemon.moves if move.pp != 0]
             if pokemon.hp <= pokemon.max_hp * 0.3:
                 facts.append(Atom("LowHP", (identity,)))
             if any(move.name.upper() == "ATTACK" for move in usable_moves):
@@ -543,8 +535,7 @@ def _observed_facts():
         if any(move.name.upper() == "ATTACK" for move in usable_moves):
             facts.append(Atom("HasDamagingMove", (identity,)))
         if any(
-            move.name.upper() == "ATTACK" and move.value >= 15
-            for move in usable_moves
+            move.name.upper() == "ATTACK" and move.value >= 15 for move in usable_moves
         ):
             facts.append(Atom("HasHighDamagePotential", (identity,)))
         if active.hp < active.max_hp and any(
@@ -600,12 +591,8 @@ def start_battle():
     if not player_trainer.pokemon or not rival_trainer.pokemon:
         raise ValueError("Both NPCs must have at least one Pokémon.")
 
-    npc_a_trainer = Trainer(
-        "NPC A", deepcopy(player_trainer.pokemon), identity="NPC_A"
-    )
-    npc_b_trainer = Trainer(
-        "NPC B", deepcopy(rival_trainer.pokemon), identity="NPC_B"
-    )
+    npc_a_trainer = Trainer("NPC A", deepcopy(player_trainer.pokemon), identity="NPC_A")
+    npc_b_trainer = Trainer("NPC B", deepcopy(rival_trainer.pokemon), identity="NPC_B")
     player_trainer = None
     rival_trainer = None
     rival = None
@@ -624,7 +611,7 @@ def start_battle():
     planning_trace_step = 0
     last_planning = None
     _refresh_inference()
-    battle_text = "NPC A is scheduled to act. Press SPACE to advance."
+    battle_text = "NPC A is scheduled to act. Press SPACE to\nadvance."
 
 
 def choose_action(actor_id, depth=2, mode="minimax", hints=(), plan_hint=None):
@@ -678,9 +665,7 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=(), plan_hint=None):
         next_opponent = next_b if actor_id == "NPC_A" else next_a
         user = next_actor.pokemon[action.actor_index]
         move = user.moves[action.move_index]
-        target_trainer = (
-            next_opponent if move.name.upper() == "ATTACK" else next_actor
-        )
+        target_trainer = next_opponent if move.name.upper() == "ATTACK" else next_actor
         target = target_trainer.pokemon[action.target_index]
         simulate_move(user, target, action.move_index)
         next_opponent.advance_active()
@@ -722,9 +707,7 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=(), plan_hint=None):
                 "target_index": action.target_index,
                 "target": target_trainer.pokemon[action.target_index].name,
                 "move_index": action.move_index,
-                "name": actor.pokemon[action.actor_index]
-                .moves[action.move_index]
-                .name,
+                "name": actor.pokemon[action.actor_index].moves[action.move_index].name,
                 "score": score,
             }
         )
@@ -751,9 +734,7 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=(), plan_hint=None):
             plan_hint.target_index,
             next(
                 index
-                for index, move in enumerate(
-                    actor.pokemon[plan_hint.actor_index].moves
-                )
+                for index, move in enumerate(actor.pokemon[plan_hint.actor_index].moves)
                 if move.name.upper() == plan_hint.move_name
             ),
         )
@@ -790,8 +771,7 @@ def choose_action(actor_id, depth=2, mode="minimax", hints=(), plan_hint=None):
                         (
                             item
                             for item in node["children"]
-                            if not item["pruned"]
-                            and item["value"] == node["value"]
+                            if not item["pruned"] and item["value"] == node["value"]
                         ),
                         None,
                     )
@@ -885,9 +865,7 @@ def advance_battle():
         move.name,
     )
     available_names = [
-        available_move.name
-        for available_move in user.moves
-        if available_move.pp != 0
+        available_move.name for available_move in user.moves if available_move.pp != 0
     ]
     valid_hints = []
     for hint in matching:
@@ -940,15 +918,13 @@ def advance_battle():
             "action was executed instead."
         )
     elif any(
-        hint.actor == current_agent
-        or hint.actor.startswith(f"{current_agent}:")
+        hint.actor == current_agent or hint.actor.startswith(f"{current_agent}:")
         for hint in hints
     ):
         actor_hints = [
             hint
             for hint in hints
-            if hint.actor == current_agent
-            or hint.actor.startswith(f"{current_agent}:")
+            if hint.actor == current_agent or hint.actor.startswith(f"{current_agent}:")
         ]
         hint_summary = ", ".join(
             sorted({f"{hint.rule_id}:{hint.action}" for hint in actor_hints})
@@ -990,18 +966,18 @@ def advance_battle():
                 )
         last_interaction = f"{last_interaction} {plan_summary}"
     elif decision is not None:
-        last_interaction = (
-            f"{last_interaction} No planning goal was derived by the KB."
-        )
+        last_interaction = f"{last_interaction} No planning goal was derived by the KB."
 
     if npc_a_trainer.is_defeated or npc_b_trainer.is_defeated:
         _finish_battle()
         _refresh_inference()
     else:
         current_agent = "NPC_B" if current_agent == "NPC_A" else "NPC_A"
-        next_name = npc_a_trainer.name if current_agent == "NPC_A" else npc_b_trainer.name
+        next_name = (
+            npc_a_trainer.name if current_agent == "NPC_A" else npc_b_trainer.name
+        )
         battle_text = (
-            f"{actor.name}'s {user.name} used {move.name} on "
+            f"{actor.name}'s {user.name} used {move.name} on"
             f"{target_trainer.name}'s {target.name}.\n"
             f"{next_name} is scheduled. Press SPACE to continue."
         )
@@ -1064,7 +1040,7 @@ def _draw_trainer(trainer, x, screen, font, flip):
 
 
 def draw_battle_text(screen, font):
-    sprite = scale_sprite(box, 5, (0, 380))
+    sprite = scale_sprite(box, 6.15, (0, 380))
     screen.blit(sprite[0], sprite[1])
 
     for line_index, line in enumerate(battle_text.splitlines()):
@@ -1126,15 +1102,21 @@ def draw_ai_brain(screen, font):
     left = 625
     scaled = scale_sprite(vert_box, 10, (900 - 325, -50))
     screen.blit(scaled[0], scaled[1])
-    screen.blit(font.render(f"AI SEARCH - TURN {turn_count}", False, "black"), (left, 0))
+    screen.blit(
+        font.render(f"AI SEARCH - TURN {turn_count}", False, "black"), (left, 0)
+    )
     if last_search is None:
         screen.blit(font.render("Waiting for SPACE", False, "black"), (left, 50))
         return
 
     mode_text = "ALPHA-BETA" if last_search["mode"] == "alpha-beta" else "MINIMAX"
-    screen.blit(font.render(f"AGENT: {last_search['actor']}", False, "black"), (left, 45))
+    screen.blit(
+        font.render(f"AGENT: {last_search['actor']}", False, "black"), (left, 45)
+    )
     screen.blit(font.render(f"MODE: {mode_text}", False, "black"), (left, 80))
-    screen.blit(font.render(f"DEPTH: {last_search['depth']}", False, "black"), (left, 115))
+    screen.blit(
+        font.render(f"DEPTH: {last_search['depth']}", False, "black"), (left, 115)
+    )
     action_font = _node_font(14)
     screen.blit(
         action_font.render("POKEMON > TARGET / MOVE / SCORE", False, "black"),
@@ -1245,7 +1227,9 @@ def _center_text(screen, font, text, color, center):
 def node_overlay(screen, font):
     if last_search is None:
         screen.blit(
-            _node_font(16).render("SEARCH TREE: press SPACE to advance", False, "black"),
+            _node_font(16).render(
+                "SEARCH TREE: press SPACE to advance", False, "black"
+            ),
             (15, 15),
         )
         return
@@ -1448,7 +1432,9 @@ def draw_kb_overlay(screen, font):
     )
     if not battle_started or inference_result is None:
         screen.blit(
-            detail_font.render("Battle knowledge has not been initialized.", False, muted),
+            detail_font.render(
+                "Battle knowledge has not been initialized.", False, muted
+            ),
             (16, 70),
         )
         return
@@ -1481,7 +1467,7 @@ def draw_kb_overlay(screen, font):
     left_facts = facts[: (len(facts) + 1) // 2]
     right_facts = facts[(len(facts) + 1) // 2 :]
     for column, column_facts in enumerate((left_facts, right_facts)):
-        x = 16 + column * 235
+        x = 16 + column * 450
         y = 138
         for fact in column_facts:
             if y > 320:
@@ -1498,30 +1484,35 @@ def draw_kb_overlay(screen, font):
             y += 18
 
     trace = inference_result.evaluations
-    screen.blit(title_font.render("RULE EVALUATION", False, blue), (500, 112))
-    if trace:
+    # screen.blit(title_font.render("RULE EVALUATION", False, blue), (500, 112))
+    # if trace:
+    if trace and False:
         index = min(kb_trace_step, len(trace) - 1)
         evaluation = trace[index]
         rule_status = (
             "MATCHED"
             if evaluation["matched"]
-            else "CONTRADICTED"
-            if any(
-                condition["status"] in ("contradicted", "partially contradicted")
-                for condition in evaluation["conditions"]
+            else (
+                "CONTRADICTED"
+                if any(
+                    condition["status"] in ("contradicted", "partially contradicted")
+                    for condition in evaluation["conditions"]
+                )
+                else "UNKNOWN / NOT ENTAILED"
             )
-            else "UNKNOWN / NOT ENTAILED"
         )
         screen.blit(
             detail_font.render(
                 f"Step {index + 1}/{len(trace)} | Iteration {evaluation['iteration']} | "
                 f"{evaluation['rule_id']} | {rule_status}",
                 False,
-                green
-                if evaluation["matched"]
-                else red
-                if rule_status == "CONTRADICTED"
-                else orange,
+                (
+                    green
+                    if evaluation["matched"]
+                    else red
+                    if rule_status == "CONTRADICTED"
+                    else orange
+                ),
             ),
             (500, 138),
         )
@@ -1539,9 +1530,7 @@ def draw_kb_overlay(screen, font):
                 else orange
             )
             screen.blit(
-                detail_font.render(
-                    f"{condition['condition']} : {state}", False, color
-                ),
+                detail_font.render(f"{condition['condition']} : {state}", False, color),
                 (500, y),
             )
             y += 18
@@ -1571,18 +1560,22 @@ def draw_kb_overlay(screen, font):
                 detail_font.render(f"Substitution: {substitution}", False, muted),
                 (500, min(y, 286)),
             )
-    else:
-        screen.blit(
-            detail_font.render("No rules are configured.", False, orange),
-            (500, 140),
-        )
+    # else:
+    # screen.blit(
+    #     detail_font.render("No rules are configured.", False, orange),
+    #     (500, 140),
+    # )
 
-    screen.blit(title_font.render("INFERRED FACTS / ACTION INTENTS", False, green), (16, 344))
-    y = 370
+    screen.blit(
+        title_font.render("INFERRED FACTS / ACTION INTENTS", False, green), (16, 355)
+    )
+    y = 380
     derived = inference_result.derivations
     if not derived:
         screen.blit(
-            detail_font.render("No new facts were entailed in this inference pass.", False, muted),
+            detail_font.render(
+                "No new facts were entailed in this inference pass.", False, muted
+            ),
             (16, y),
         )
     else:
@@ -1609,15 +1602,10 @@ def draw_kb_overlay(screen, font):
         if fact.predicate == "PokemonActionIntent"
     )
     if pokemon_intents:
-        final = (
-            f"{len(pokemon_intents)} Pokémon intent(s); "
-            f"{pokemon_intents[0]}"
-        )
+        final = f"{len(pokemon_intents)} Pokémon intent(s); {pokemon_intents[0]}"
     else:
         action_intents = sorted(
-            fact
-            for fact in inference_result.facts
-            if fact.predicate == "ActionIntent"
+            fact for fact in inference_result.facts if fact.predicate == "ActionIntent"
         )
         final = (
             ", ".join(str(fact) for fact in action_intents)
@@ -1714,22 +1702,17 @@ def draw_planning_overlay(screen, font):
         ),
         (16, 124),
     )
-    selected_index = min(
-        planning_trace_step, max(len(plan_result.steps) - 1, 0)
-    )
+    selected_index = min(planning_trace_step, max(len(plan_result.steps) - 1, 0))
     visible_steps = plan_result.steps[:9]
     for index, step in enumerate(visible_steps):
         selected = index == selected_index
         prefix = ">" if selected else " "
         color = green if selected else "black"
         action_text = str(step.action)
-        preconditions = ", ".join(
-            str(fact) for fact in step.preconditions
-        )
+        preconditions = ", ".join(str(fact) for fact in step.preconditions)
         screen.blit(
             detail_font.render(
-                f"{prefix}{index + 1:02}   {action_text[:29]:29} "
-                f"{preconditions[:60]}",
+                f"{prefix}{index + 1:02}   {action_text[:29]:29} {preconditions[:60]}",
                 False,
                 color,
             ),
@@ -1751,7 +1734,8 @@ def draw_planning_overlay(screen, font):
             (
                 fact
                 for fact in selected_step.state
-                if fact[0] in (
+                if fact[0]
+                in (
                     "hp",
                     "hp-value",
                     "defense-value",
@@ -1765,14 +1749,11 @@ def draw_planning_overlay(screen, font):
             ),
             key=lambda fact: tuple(str(part) for part in fact),
         )
-        state_summary = ", ".join(
-            str(fact) for fact in state_facts
-        )
+        state_summary = ", ".join(str(fact) for fact in state_facts)
         detail_y = 350
         screen.blit(
             detail_font.render(
-                f"RESULT(s, a) AFTER STEP {selected_index + 1}: "
-                f"{state_summary[:110]}",
+                f"RESULT(s, a) AFTER STEP {selected_index + 1}: {state_summary[:110]}",
                 False,
                 blue,
             ),
