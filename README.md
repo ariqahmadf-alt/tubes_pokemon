@@ -1,39 +1,27 @@
-# Tugas Besar Kecerdasan Buatan — Tahap 3
+# Tugas Besar Kecerdasan Buatan — Tahap 4
 
 ## Deskripsi
 
-Proyek ini merupakan pengembangan lanjutan dari **Tugas Besar Kecerdasan Buatan Tahap 2**, yang mengintegrasikan simulasi lingkungan **open field berbasis grid**, pertempuran **turn-based** menggunakan _adversarial search_ (Minimax & Alpha-Beta Pruning), serta penambahan sistem **Pre-Battle Drafting** otomatis untuk konfigurasi tim NPC.
+Proyek ini merupakan pengembangan lanjutan dari **Tugas Besar Kecerdasan Buatan Tahap 3**. Tahap 4 menambahkan tiga kemampuan pada NPC: penalaran dengan **Knowledge Base First-Order Logic**, **Automated Planning**, dan pemilihan tim di bawah ketidakpastian (**Decisions Under Uncertainty**). Pertempuran _turn-based_ dengan _adversarial search_ (Minimax & Alpha-Beta Pruning) dari Tahap 2 tetap menjadi pengambil keputusan akhir.
 
 Sistem terdiri atas tiga mode utama secara berurutan:
 
-1. **Overworld** — Pemain dan NPC bergerak pada lingkungan grid. NPC menggunakan algoritma **A\*** untuk pathfinding menuju posisi pemain.
+1. **Overworld** — Pemain dan NPC bergerak pada lingkungan grid. NPC menggunakan algoritma **A\*** untuk pathfinding menuju posisi pemain (tidak berubah dari tahap sebelumnya).
 
-2. **Select (Pre-Battle Drafting)** — Setelah pemain memilih 3 Pokémon, sistem secara otomatis menyusun 3 Pokémon untuk NPC dari 10 pilihan yang tersedia menggunakan dua pendekatan AI:
-   - **Local Search (Hill Climbing)**
+2. **Select (Pre-Battle Drafting)** — Setelah pemain memilih 3 Pokémon, sistem menyusun 3 Pokémon untuk NPC B dari 10 pilihan yang tersedia. Satu kali tekan `SPACE` menjalankan dua tahap berurutan:
+   - **Constraint Satisfaction Problem (CSP)** dengan Backtracking, Heuristik (MRV, Degree, LCV), Inferensi AC-3, dan Branch-and-Bound Pruning, yang menghasilkan tim awal (_seed_).
+   - **Local Search (Steepest Ascent Hill Climbing)** dengan **expected utility (EU)** sebagai fungsi objektif, dimulai dari tim hasil CSP. Hasilnya menjadi roster akhir NPC B.
 
-   - **Constraint Satisfaction Problem (CSP)** dengan Backtracking, Heuristik (MRV, Degree, LCV), Inferensi AC-3, dan Branch-and-Bound Pruning.
+3. **Battle** — Simulasi turn-based antara tepat dua NPC. NPC A memakai tim pemain dan NPC B memakai roster hasil Select. Pada setiap giliran, satu NPC menjalankan enam tahap: observasi, inferensi KB, planning, adversarial search kedalaman 2, pemilihan aksi, dan eksekusi. Pemain hanya memajukan simulasi.
 
-3. **Battle** — Simulasi turn-based antara tepat dua NPC. Roster yang disiapkan pada Select disalin menjadi data NPC A (bukan Pokémon pemain dalam battle); NPC A dan NPC B menentukan aksi sendiri menggunakan Minimax atau Alpha-Beta Pruning. Pemain hanya memajukan simulasi. Knowledge Base FOL terpisah menurunkan interaksi NPC dan menampilkan jejak inferensinya.
+## Fitur Utama Tahap 4
 
-## Fitur Utama Tahap 3
-
-- **Formulasi Local Search (Hill Climbing):** Mengoptimalkan komposisi tim NPC secara iteratif berdasarkan skor keunggulan elemen V(T).
-
-- **Formulasi CSP & Backtracking:** Menelusuri ruang penugasan secara sistematis, lengkap dengan:
-  - Variabel, Domain, dan Constraint All-Different.
-
-  - Inferensi arc-consistency (**AC-3**).
-
-  - Heuristik pemilihan variabel (**MRV**, **Degree**) dan nilai (**LCV**).
-
-  - **Bound-Pruning** berdasarkan batas atas skor aditif.
-
-- **Pengali Keunggulan Elemen:** Membaca relasi dari `weaknesses.txt` (56 pasangan antarelemen dari 17 elemen) yang diterapkan pada transisi _battle_ (pengali damage 1.5x atau 1/1.5x).
-- **Knowledge-Based Battle Agent:** Fakta dan aturan FOL deklaratif diproses dengan forward chaining, termasuk pilihan Pokémon pelaku dan target.
-- **Dua NPC Berlawanan:** NPC A dan NPC B bergantian menentukan Pokémon hidup yang digunakan, target Pokémon lawan untuk serangan, dan move; SPACE hanya memajukan satu aksi NPC.
-- **Perencanaan Battle:** Planner mencari urutan aksi dari state numerik yang transisinya dijalankan oleh simulator battle; pencarian adversarial tetap memeriksa keamanan langkah pertama.
-
-- **Debug Overlay:** Antarmuka untuk meninjau pencarian adversarial, inferensi, dan langkah-langkah perencanaan.
+- **Logic & Representasi Pengetahuan:** Fakta dan **19 aturan** (R1–R10, P1–P5, G1–G4) disimpan pada berkas JSON terpisah dari kode. _Inference engine_ memakai **forward chaining** (generalized modus ponens dengan unifikasi) sampai titik tetap. Operasi KB: `tell`, `update_observations`, `infer`, dan `ask` (_entailed_ / _contradicted_ / _unknown_).
+- **Automated Planning:** Tujuan (`recover`, `finish`, `win`) diturunkan oleh aturan KB (`PlanGoal`). Planner mencari rencana dengan **A\* berbasis simulator pertempuran** (`simulate_move()`), dengan _state_ berupa HP, defense, dan PP setiap Pokémon. Batas pencarian: 2500 ekspansi dan 80 ms. Langkah pertama rencana divalidasi dengan _dry run_ lalu dipakai sebagai _plan hint_.
+- **Decisions Under Uncertainty:** Pemilihan tim NPC B dirumuskan sebagai keputusan dengan aturan _maximum expected utility_. Skenarionya adalah Pokémon pemain yang menjadi lawan, dengan probabilitas seragam 1/|P| (asumsi pemodelan, bukan data pemakaian). Utility skenario adalah −|margin keunggulan elemen|, sehingga tim yang seimbang bernilai paling tinggi.
+- **Integrasi dengan Adversarial Search:** Hint dari KB dan planner hanya mengubah urutan evaluasi aksi. Aksi rencana dipilih bila nilainya berada dalam `plan_tolerance` (50) dari nilai terbaik; selain itu, aksi terbaik menurut Minimax / Alpha-Beta tetap dipakai.
+- **Pengali Keunggulan Elemen:** Membaca relasi dari `weaknesses.txt` (56 pasangan keunggulan) yang diterapkan pada transisi _battle_ (pengali damage 1.5x atau 1/1.5x).
+- **Tiga Debug Overlay Baru:** Overlay Knowledge Base (`I`), Planning (`P`), dan Decisions Under Uncertainty (`F3`), selain overlay Local Search (`M`), CSP (`C`), dan Node Tree (`N`) dari tahap sebelumnya.
 
 ## Struktur Program
 
@@ -43,50 +31,52 @@ tubes_pokemon/
 └── src/
     ├── main.py
     ├── battle.py
-    ├── battle_planning.py
-    ├── planning.py
     ├── selection.py
+    ├── uncertainty.py
     ├── knowledge_base.py
     ├── inference_engine.py
     ├── battle_interaction.py
+    ├── battle_planning.py
+    ├── planning.py
     ├── maze.py
     ├── config.py
     ├── utils.py
     └── assets/
         ├── weaknesses.txt
-        ├── planning/
-        │   └── battle_domain.json
-        └── knowledge_base/
-            ├── battle_facts.json
-            └── battle_rules.json
+        ├── knowledge_base/
+        │   ├── battle_facts.json
+        │   └── battle_rules.json
+        └── planning/
+            └── battle_domain.json
 ```
 
 ### Fungsi Utama Berkas
 
-| Berkas         | Fungsi                                                                                                                                                                |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main.py`      | Menjalankan _game loop_, navigasi overworld, transisi fase select, kemajuan giliran dua NPC, serta manajemen _debug overlay_. |
-| `battle.py`    | Mengatur state battle dua NPC, aksi Pokémon, Minimax/Alpha-Beta, evaluasi, dan overlay battle. |
-| `battle_planning.py` | Mengubah tujuan KB menjadi problem pencarian state battle dan memakai simulator move untuk menghitung transisi aksi. |
-| `planning.py` | Menyediakan mesin STRIPS generik: grounding, transisi state, forward search, regression, heuristik, dan planning graph. |
-| `knowledge_base.py` | Memuat dan mengelola fakta serta aturan battle secara deklaratif. |
-| `inference_engine.py` | Menjalankan forward chaining FOL dan merekam jejak inferensi aktual. |
-| `battle_interaction.py` | Memvalidasi dan memetakan intent KB ke aksi battle yang tersedia. |
-| `selection.py` | Mengimplementasikan agen penyusun tim NPC (**Hill Climbing** dan **CSP** lengkap dengan AC-3, LCV, MRV, Branch-and-Bound) serta overlay visualnya.                    |
-| `maze.py`      | Membentuk representasi grid/graf dari peta dan hubungan antar-_node_.                                                                                                 |
-| `config.py`    | Menyimpan konfigurasi sistem, parameter overworld, dan jenis AI _battle_.                                                                                             |
-| `utils.py`     | Menyediakan fungsi untuk mengubah skala, rotasi, dan membalik sprite.                                                                                                  |
-| `assets/`      | Menyimpan aset visual serta berkas relasi keunggulan elemen (`weaknesses.txt`).                                                                                       |
+| Berkas                  | Status | Fungsi                                                                                                                                                                                                             |
+| ----------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `main.py`               | Diubah | Menjalankan _game loop_, navigasi overworld, transisi fase select dan battle, kemajuan giliran dua NPC, serta manajemen _debug overlay_ (M, C, F3, I, P, N).                                                       |
+| `battle.py`             | Diubah | Mengatur state battle dua NPC, pembentukan fakta observasi (`_observed_facts()`), pemanggilan inferensi dan planner, `choose_action()` dengan hint, Minimax/Alpha-Beta kedalaman 2, serta overlay KB dan planning. |
+| `selection.py`          | Diubah | Agen penyusun tim NPC: **CSP** (`choose_rival_team()`) dan **Local Search dengan EU** (`choose_rival_team_old()`), serta overlay Local Search, CSP, dan Decisions Under Uncertainty.                               |
+| `uncertainty.py`        | Baru   | Skenario, utility, _expected utility_, dan `evaluate_team()`; memvalidasi bahwa probabilitas berada pada [0, 1] dan berjumlah 1.                                                                                   |
+| `knowledge_base.py`     | Baru   | Kelas `Atom`, `Rule`, dan `KnowledgeBase`; memuat fakta dan aturan dari JSON.                                                                                                                                      |
+| `inference_engine.py`   | Baru   | `InferenceEngine.infer()`: forward chaining sampai titik tetap, beserta rekaman evaluasi aturan dan derivasi untuk overlay.                                                                                        |
+| `battle_interaction.py` | Baru   | `ActionHint` dan `PlanHint`; memetakan dan memvalidasi konklusi KB menjadi aksi battle.                                                                                                                            |
+| `battle_planning.py`    | Baru   | Planner pertempuran: observasi state, kandidat tujuan dari KB, A\* dengan simulator, dan validasi langkah pertama.                                                                                                 |
+| `planning.py`           | Baru   | Struktur data planning (`Action`, `PlanStep`, `PlanResult`, `PlanningDomain`) dan rutinitas planning umum. Rutinitas pencarian umumnya belum dipanggil oleh planner pertempuran (lihat Keterbatasan).              |
+| `maze.py`               | Tetap  | Membentuk representasi grid/graf dari peta dan hubungan antar-_node_.                                                                                                                                              |
+| `config.py`             | Diubah | Konfigurasi sistem: `ai_type`, `use_planning`, `planner_method`, `plan_tolerance`, `planner_max_expansions`.                                                                                                       |
+| `utils.py`              | Tetap  | Fungsi untuk mengubah skala, rotasi, dan membalik sprite.                                                                                                                                                          |
+| `assets/`               | Diubah | Aset visual, `weaknesses.txt`, fakta dan aturan KB (JSON), serta `battle_domain.json` (`goal_priority` dan `hp_bands`).                                                                                            |
 
 ## Persyaratan & Instalasi
 
 - **Python 3**
-- **Pygame**
+- **Pygame-ce** (diuji pada pygame-ce 2.5.8, Python 3.12). `[PERLU DIKONFIRMASI: laporan Tabel 3.6 no. 12 menyebut pygame 2.6.1 gagal saat battle dimulai karena deepcopy objek pygame.Surface]`
 
 Instalasi dependensi:
 
 ```bash
-python -m pip install pygame
+python -m pip install pygame-ce
 ```
 
 Jalankan program dari folder `src` agar aset relatif seperti gambar dan font dapat ditemukan:
@@ -96,74 +86,103 @@ cd src
 python main.py
 ```
 
-Jalankan pengujian battle/KB dari folder `src`:
+## Konfigurasi (`config.py`)
 
-```bash
-python -m unittest discover -s tests
-```
+| Parameter                | Nilai bawaan   | Keterangan                                                                                                                |
+| ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ai_type`                | `"alpha-beta"` | Jenis adversarial search: `"minimax"` atau `"alpha-beta"`.                                                                |
+| `use_planning`           | `True`         | Mengaktifkan lapisan planning (hint tingkat trainer hanya dipakai bila `True`).                                           |
+| `planner_method`         | `"forward"`    | Nilai `"backward"` diterima tetapi pencarian tetap forward A\* simulasi.                                                  |
+| `plan_tolerance`         | `50`           | Selisih nilai terbesar dari aksi terbaik agar langkah pertama rencana tetap diikuti (bobot HP 10, jadi setara 5 poin HP). |
+| `planner_max_expansions` | `2500`         | Batas ekspansi simpul planner (batas waktu 80 ms ada pada `plan_battle_turn`).                                            |
 
 ## Kontrol Permainan
 
-| Tombol      | Fungsi                                                                                                   |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| `↑ ↓ ← →`   | Menggerakkan pemain di overworld; navigasi menu/debug Select; UP/DOWN menelusuri evaluasi aturan pada overlay KB. |
-| `SPACE`     | Di Select, menjalankan pemilihan roster NPC dan memulai battle; di battle, memajukan tepat satu aksi AI NPC. |
-| `M`         | Di Select, membuka/menutup **Local Search Overlay**; di battle, mengganti log aksi dan ringkasan search; di overworld, mengganti tampilan peta. |
-| `I`         | Membuka/menutup overlay fakta dan jejak inferensi Knowledge Base battle. |
-| `C`         | Membuka/menutup **CSP Backtracking Overlay** di Select.                                                   |
-| `N`         | Menampilkan/menyembunyikan struktur _Node Tree_ di _battle_.                                               |
-| `P`         | Membuka/menutup overlay perencanaan battle; UP/DOWN memilih langkah untuk melihat precondition dan state hasil. Membuka overlay `P`, `I`, atau `N` menutup dua overlay lainnya. |
-| `Q / W`     | Menggulir riwayat log _battle_.                                                                           |
-| `ESC`       | Keluar dari program.                                                                                      |
+| Mode      | Tombol    | Fungsi                                                                                    |
+| --------- | --------- | ----------------------------------------------------------------------------------------- |
+| Overworld | `↑ ↓ ← →` | Menggerakkan pemain.                                                                      |
+| Select    | `SPACE`   | Pertama: menjalankan CSP lalu Local Search EU. Kedua: memulai battle.                     |
+| Select    | `↑ ↓`     | Tanpa overlay: memilih slot pemain. Dengan overlay terbuka: mundur/maju satu entri jejak. |
+| Select    | `← →`     | Mengganti Pokémon pada slot pemain yang terpilih.                                         |
+| Select    | `M`       | Membuka/menutup **Local Search Overlay**.                                                 |
+| Select    | `C`       | Membuka/menutup **CSP Backtracking Overlay**.                                             |
+| Select    | `F3`      | Membuka/menutup **Decisions Under Uncertainty Overlay**.                                  |
+| Battle    | `SPACE`   | Memajukan tepat satu giliran seorang NPC.                                                 |
+| Battle    | `I`       | Membuka/menutup **KB Overlay** (jejak evaluasi aturan).                                   |
+| Battle    | `P`       | Membuka/menutup **Planning Overlay**.                                                     |
+| Battle    | `N`       | Menampilkan/menyembunyikan **Node Tree** pencarian alpha-beta.                            |
+| Battle    | `↑ ↓`     | Saat overlay I atau P terbuka: menelusuri evaluasi aturan atau langkah rencana.           |
+| Battle    | `Q / W`   | Menggulir riwayat log _battle_.                                                           |
+| Semua     | `ESC`     | Keluar dari program.                                                                      |
 
-Mode pencarian dan bobot evaluasi diatur pada kode/config; pemain tidak dapat mengubah strategi NPC selama battle.
+Pada mode Select, overlay M, C, dan F3 saling meniadakan; pada mode Battle, overlay I, P, dan N saling meniadakan.
 
-## Pemodelan Masalah AI (Tahap 3)
+## Pemodelan Masalah AI (Tahap 4)
 
-### 1. Battle Knowledge Base
+### 1. Knowledge Base dan Forward Chaining
 
-- **Representasi:** Predikat FOL menggunakan identitas `NPC_A` dan `NPC_B`, kepemilikan Pokémon, kondisi Pokémon hidup/HP/move, target, serta keunggulan tipe.
-- **Inferensi:** Forward chaining dengan pencocokan variabel hingga tidak ada fakta baru.
-- **Interaksi:** Pada setiap giliran, pencarian adversarial mengevaluasi Pokémon hidup mana yang bertindak, move yang dipakai, dan target Pokémon lawan untuk serangan. Intent FOL yang spesifik Pokémon memandu urutan pilihan dan hasil aktor/target/move ditampilkan pada battle, log, dan overlay. Tekan `I` untuk meninjau fakta, rule, substitusi, kesimpulan, serta hasil validasi aksi. Informasi yang tidak diketahui tidak dianggap otomatis salah.
-- Sistem battle saat ini belum memiliki status effect atau item; rule status tetap dapat diuji dengan fakta status, tetapi game tidak membuat kondisi status/item fiktif.
+- **Representasi:** Atom FOL `Atom(predicate, arguments, negated)` dengan identitas `NPC_A` dan `NPC_B`, kepemilikan Pokémon, kondisi hidup/HP/move, serta keunggulan tipe. Argumen berawalan `?` adalah variabel. Seluruh aturan berbentuk klausa definit (Horn): konjungsi literal positif mengimplikasikan satu literal.
+- **Fakta:** Fakta dasar dimuat dari `battle_facts.json`; fakta observasi dibentuk ulang pada setiap giliran oleh `_observed_facts()`.
+- **Aturan:** R1–R10 (maksud aksi tingkat trainer), P1–P5 (maksud aksi tingkat Pokémon), dan G1–G4 (tujuan planning).
+- **Inferensi:** Setiap aturan dievaluasi berurutan, kondisi dicocokkan dengan `_unify()`, dan konklusi langsung ditambahkan ke himpunan fakta sampai satu iterasi penuh tidak menurunkan fakta baru.
+- **Pemakaian:** Konklusi `ActionIntent` dan `PokemonActionIntent` menjadi hint yang hanya memengaruhi urutan evaluasi aksi.
+- **Keterbatasan:** `UnderStatusEffect` tidak pernah dibentuk karena game belum memiliki status effect, sehingga aturan R4, R9, dan P4 tidak pernah menurunkan konklusi.
 
 ### 2. Automated Planning
 
-- **State:** Planner battle memakai nilai numerik HP, defense, dan PP dari setiap Pokémon. Band `high`, `mid`, `low`, atau `gone` hanya dipakai untuk observasi dan tampilan; `low` berarti HP ≤ 30% maksimum.
-- **Transisi aksi:** Aksi battle disimulasikan memakai fungsi move game yang sama dengan simulasi pertarungan. Damage, pengurangan defense, penggunaan PP, heal, dan pemulihan PP oleh REST karena itu mengikuti aturan runtime; shield tidak diasumsikan pecah dalam satu serangan. Domain JSON menyimpan prioritas goal dan batas HP, bukan aksi simulasi.
-- **Goal:** Rule KB memilih `recover`, `finish`, atau `win`. Domain menetapkan prioritas `recover` > `finish` > `win`; recovery mengarahkan Pokémon lemah ke band HP tinggi, finish menargetkan satu Pokémon lawan, dan win menargetkan seluruh roster lawan tanpa mengikat tujuan tim ke satu Pokémon tertentu.
-- **Planner:** Pencarian A* berbobot menggunakan simulasi state numerik dan dibatasi berdasarkan ekspansi serta waktu; solusi tidak dijamin optimal. Pengaturan `backward` diterima untuk kompatibilitas konfigurasi, tetapi juga memakai pencarian maju simulasi karena regression pada abstraksi HP lama tidak akurat untuk state numerik.
-- **Integrasi battle:** Planner hanya memberi saran langkah pertama. Langkah itu divalidasi ulang dengan simulator yang sama sebelum dipakai; Minimax/Alpha-Beta tetap menghitung nilai aksi tanpa perubahan dan saran rencana hanya dipilih jika berada dalam toleransi skor. State diamati ulang dan rencana dibuat ulang setiap giliran.
-- **Debug:** Tekan `P` untuk melihat goal dan rule KB, urutan aksi, precondition, state setelah langkah, statistik, dan alasan saat rencana tidak tersedia. UP/DOWN menelusuri langkah rencana.
+- **State:** Tuple per Pokémon (HP, defense, PP setiap aksi) untuk kedua sisi.
+- **Aksi:** `attack`, `heal`, dan `rest` (aksi `defend` tidak direncanakan). Setiap aksi berbiaya 1.
+- **Transisi:** Hasil aksi dihitung oleh `simulate_move()` pada salinan Pokémon.
+- **Tujuan:** `recover`, `finish`, atau `win`, berasal dari `PlanGoal` hasil inferensi KB dan diurutkan oleh `goal_priority`.
+- **Pencarian:** A\* maju dengan prioritas f = g + 2h, h berupa batas bawah jumlah aksi, serta batas 2500 ekspansi dan 80 ms. Status hasil: `plan`, `no-plan`, atau `limit`.
+- **Validasi:** Langkah pertama diuji dengan _dry run_ sebelum menjadi plan hint.
 
-### 3. Local Search (Hill Climbing)
+### 3. Adversarial Search
 
-- **State:** Tim NPC berupa 3 Pokémon berbeda yang bukan anggota tim pemain.
-- **Neighbour:** Mengganti satu slot Pokémon dengan satu kandidat di luar tim (3 x (m - 3) kombinasi).
-- **Fungsi Objektif:** Memaksimalkan skor keunggulan elemen V(T), yaitu jumlah nilai m(r) untuk setiap Pokémon r dalam tim T. Nilai m(r) adalah selisih keunggulan terhadap seluruh tim pemain.
-- **Aturan:** _Steepest Ascent_ tanpa _random restart_ (hanya menerima perbaikan dengan skor yang lebih tinggi).
+- **Algoritma:** Minimax / Alpha-Beta Pruning, kedalaman 2.
+- **Evaluasi:** E(S) = Σ u(p) tim sendiri − Σ u(p) tim lawan, dengan u = 10·HP + 2·DEF. Nilai terminal ±100000.
+- **Urutan evaluasi:** Aksi plan hint, lalu aksi yang didukung KB, lalu indeks pelaku, sasaran, dan aksi. Aksi rencana dipilih bila nilainya berada dalam `plan_tolerance` dari nilai terbaik.
 
-### 4. Constraint Satisfaction Problem (CSP)
+### 4. Decisions Under Uncertainty (Pemilihan Tim NPC B)
+
+- **Skenario:** Setiap Pokémon pemain, dengan probabilitas seragam 1/|P|.
+- **Margin:** m(T, p) = jumlah (keunggulan r atas p − keunggulan p atas r) untuk setiap r pada tim T.
+- **Utility:** U = −|m|, sehingga nol berarti seimbang.
+- **Expected utility:** EU(T) = Σ P(skenario) · U(skenario).
+- **Pencarian:** _Steepest ascent hill climbing_ dari tim CSP; _neighbour_ dibentuk dengan mengganti satu slot dengan satu kandidat di luar tim, dan perpindahan diterima hanya bila EU lebih besar. Karena EU tidak aditif terhadap anggota tim, optimum global tidak dijamin.
+
+### 5. Constraint Satisfaction Problem (dari Tahap 3)
 
 - **Variabel (X):** X = {X1, X2, X3} (tiga slot tim NPC).
 - **Domain (D):** Daftar Pokémon di luar tim pemain.
-- **Constraint:** _All-different_ antar slot (setiap Xi berbeda dari Xj).
-- **Optimasi & Pencarian:** Backtracking dengan heuristik MRV, Degree, LCV, inferensi **AC-3**, serta **Bound-Pruning** (memangkas cabang jika batas atas skor tidak melebihi skor terbaik saat ini).
+- **Constraint:** _All-different_ antar slot.
+- **Optimasi & Pencarian:** Backtracking dengan MRV, Degree, LCV, **AC-3**, dan **Bound-Pruning** berdasarkan skor keunggulan aditif.
 
 ## Hasil Eksperimen Ringkas
 
-Berdasarkan pengujian pada 120 kombinasi tim pemain:
+Berdasarkan pengujian pada 120 kombinasi tim pemain (fungsi asli `choose_rival_team()` dan `choose_rival_team_old()`, tanpa membuka jendela):
 
-- **Optimalitas:** Baik Hill Climbing maupun CSP berhasil mencapai skor optimum pada **120 dari 120 kombinasi** (karena fungsi skor bersifat aditif sehingga tidak memiliki _local maximum_ semu).
-- **Efisiensi Biaya:**
-  - Hill Climbing rata-rata memerlukan 1.34 langkah dan mengevaluasi 28.1 _neighbour_.
-  - CSP secara konsisten mencoba hanya 18 penugasan dan mencatat 15 _bound-prunes_ (jauh lebih efisien dibandingkan enumerasi penuh sebanyak 210 kombinasi).
+- **Optimalitas EU:** CSP saja mencapai EU optimum pada **4 dari 120** kombinasi. CSP lalu Local Search EU mencapainya pada **111 dari 120** kombinasi (92,5%). Pada 9 kombinasi (termasuk tim pemain bawaan) Local Search berhenti di _local maximum_, sesuai dengan sifat EU yang tidak aditif.
+- **Biaya Local Search dari tim CSP:** rata-rata 1,41 langkah (maksimum 3) dan 28,90 _neighbour_ dievaluasi (maksimum 48).
+- **Derau float:** Perbandingan `>` tanpa toleransi dapat menerima penggantian yang hanya berbeda pada digit terakhir. Pada tim pemain bawaan, hal ini mengubah roster NPC B dari MEGUNIM, RAPIDASH, ONYX menjadi PIKACHU, RAPIDASH, ONYX.
+- **Pertempuran tidak berakhir:** HEAL (+20 HP) dan REST (mengembalikan PP) tanpa batas giliran membuat pertempuran dapat berlanjut tanpa pemenang. Pada eksperimen laporan, 48 dari 48 pertempuran belum selesai setelah 80 giliran.
+
+Rincian eksperimen E1–E6 (ukuran inferensi dan planning, perbandingan minimax vs alpha-beta, pengaruh `plan_tolerance`) terdapat pada Bab IV laporan. Waktu eksekusi bergantung pada mesin.
+
+## Keterbatasan yang Diketahui
+
+- Aturan R4, R9, dan P4 tidak pernah aktif karena game belum memiliki status effect.
+- `planner_method = "backward"` tidak menjalankan pencarian mundur; `forward_search`, `regression_search`, dan `planning_graph` pada `planning.py` belum dipakai oleh planner pertempuran.
+- Planner bersifat single-agent dan hanya langkah pertama rencana yang dipertimbangkan; rencana disusun ulang pada setiap giliran.
+- Perbandingan EU memakai `>` tanpa toleransi float, dan Local Search tidak dijamin mencapai optimum global.
+- `next_pokemon()` dan `prev_pokemon()` dari Tahap 3 belum diperbaiki: salinan Pokémon pengganti tidak dikenali sebagai anggota tim pemain sehingga kandidat dapat berjumlah lebih dari tujuh dan rival dapat memilih Pokémon yang sama dengan pemain.
+- Probabilitas skenario seragam merupakan asumsi pemodelan, bukan hasil pengamatan.
 
 ## Demo dan Repositori
 
-- **Demo Web (GitHub Pages):** https://ariqahmadf-alt.github.io/tubes_pokemon/
-- **Repositori Git:** https://github.com/ariqahmadf-alt/tubes_pokemon/tree/csp
-- **Video Demo YouTube:** https://youtu.be/vEMODdwTfHw
+- **Demo Web (GitHub Pages):** `[isi tautan Tahap 4]`
+- **Repositori Git:** `[isi tautan branch Tahap 4; jangan memakai branch main]`
+- **Video Demo YouTube:** `[isi tautan]`
 
 ## Tim Penyusun
 
