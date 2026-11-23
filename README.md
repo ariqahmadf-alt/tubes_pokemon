@@ -23,7 +23,7 @@ Sistem terdiri atas tiga mode utama secara berurutan:
 - **Pengali Keunggulan Elemen:** Membaca relasi dari `weaknesses.txt` (56 pasangan keunggulan) yang diterapkan pada transisi _battle_ (pengali damage 1.5x atau 1/1.5x).
 - **Tiga Debug Overlay Baru:** Overlay Knowledge Base (`I`), Planning (`P`), dan Decisions Under Uncertainty (`F3`), selain overlay Local Search (`M`), CSP (`C`), dan Node Tree (`N`) dari tahap sebelumnya.
 
-## Struktur Program
+## Struktur Utama Program
 
 ```
 tubes_pokemon/
@@ -71,7 +71,7 @@ tubes_pokemon/
 ## Persyaratan & Instalasi
 
 - **Python 3**
-- **Pygame-ce** (diuji pada pygame-ce 2.5.8, Python 3.12). `[PERLU DIKONFIRMASI: laporan Tabel 3.6 no. 12 menyebut pygame 2.6.1 gagal saat battle dimulai karena deepcopy objek pygame.Surface]`
+- **Pygame-ce** (diuji pada pygame-ce 2.5.8, Python 3.12).
 
 Instalasi dependensi:
 
