@@ -1,4 +1,5 @@
 import pygame
+import re
 import config
 from copy import deepcopy
 from dataclasses import dataclass
@@ -977,7 +978,7 @@ def advance_battle():
             npc_a_trainer.name if current_agent == "NPC_A" else npc_b_trainer.name
         )
         battle_text = (
-            f"{actor.name}'s {user.name} used {move.name} on"
+            f"{actor.name}'s {user.name} used {move.name} on "
             f"{target_trainer.name}'s {target.name}.\n"
             f"{next_name} is scheduled. Press SPACE to continue."
         )
@@ -1177,6 +1178,62 @@ def draw_ai_brain(screen, font):
 _node_fonts = {}
 
 
+# ---------------------------------------------------------------------------
+# Text-layout helpers shared by the debug overlays (keep text inside its box).
+# ---------------------------------------------------------------------------
+_POKEMON_ID = re.compile(r"NPC_([AB]):(\d+):")
+
+
+def _short(text):
+    """NPC_A:0:KOBRA -> A0:KOBRA so long fact strings fit on one line."""
+    return _POKEMON_ID.sub(lambda m: f"{m.group(1)}{m.group(2)}:", str(text))
+
+
+def _fit(text, face, max_width):
+    """Truncate text with '...' so it is never wider than max_width."""
+    text = str(text)
+    if face.size(text)[0] <= max_width:
+        return text
+    while text and face.size(text + "...")[0] > max_width:
+        text = text[:-1]
+    return text + "..."
+
+
+def _fmt_fact(fact):
+    if isinstance(fact, (tuple, list)):
+        return _short("(" + " ".join(str(part) for part in fact) + ")")
+    return _short(fact)
+
+
+def _wrap_items(items, face, max_width, max_lines, sep=", "):
+    """Greedy-wrap items joined by sep without splitting an item."""
+    lines, current = [], ""
+    for item in items:
+        trial = f"{current}{sep}{item}" if current else item
+        if current and face.size(trial)[0] > max_width:
+            lines.append(current)
+            current = item
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = _fit(lines[-1] + " ...", face, max_width)
+    return [_fit(line, face, max_width) for line in lines]
+
+
+def _wrap_words(text, face, max_width, max_lines):
+    return _wrap_items(str(text).split(" "), face, max_width, max_lines, sep=" ")
+
+
+def _draw_lines(screen, face, lines, color, x, y, line_height):
+    for line in lines:
+        screen.blit(face.render(line, False, color), (x, y))
+        y += line_height
+    return y
+
+
 def _node_font(size):
     if size not in _node_fonts:
         _node_fonts[size] = pygame.font.Font("assets/pkmn.ttf", size)
@@ -1224,6 +1281,123 @@ def _center_text(screen, font, text, color, center):
     screen.blit(surf, surf.get_rect(center=center))
 
 
+MAX_TREE_ACTIONS = 6  # more root actions than this cannot be drawn as a tree
+
+
+def _node_footer(screen, f_mid, f_small, ai_mode, root, leaves_seen, leaves_cut):
+    GREEN = (0, 150, 0)
+    DARK = (70, 70, 70)
+    W = screen.get_width()
+    mids = root["children"]
+    pygame.draw.line(screen, "black", (15, 510), (W - 15, 510), 2)
+    total = leaves_seen + leaves_cut
+    stat = f"LEAVES: {leaves_seen}/{total}"
+    if ai_mode == "alpha-beta":
+        stat += f"   PRUNED: {leaves_cut}"
+    screen.blit(f_mid.render(stat, False, "black"), (15, 520))
+
+    best_label = next((c["label"] for c in mids if c["on_path"]), None)
+    if best_label is not None:
+        screen.blit(
+            f_mid.render(
+                _fit(f"BEST: {best_label} ({_fmt_score(root['value'])})", f_mid, W - 30),
+                False,
+                GREEN,
+            ),
+            (15, 545),
+        )
+    screen.blit(
+        f_small.render(
+            "GREEN: CHOSEN, GREY: PRUNED; NPC A MAXIMIZES, NPC B MINIMIZES",
+            False,
+            DARK,
+        ),
+        (15, 575),
+    )
+
+
+def _node_action_table(screen, root, ai_mode, f_big, f_mid, f_small):
+    """Readable list view for the many root actions of a three-Pokemon battle.
+
+    A tree with ~20 root branches and ~300 leaves cannot be laid out without
+    labels overlapping, so each root action becomes one table row.
+    """
+    GREEN = (0, 150, 0)
+    DARK = (70, 70, 70)
+    GREY = (150, 150, 150)
+    BLUE = (20, 90, 170)
+    W = screen.get_width()
+    mids = root["children"]
+
+    screen.blit(
+        f_mid.render(
+            f"AI PRIORITY (WEIGHTS)   HP: {hp_weight}   DEF: {def_weight}",
+            False,
+            "black",
+        ),
+        (15, 56),
+    )
+    screen.blit(
+        f_small.render(
+            f"{root['label']}: {len(mids)} ROOT ACTIONS, IN EVALUATION ORDER",
+            False,
+            DARK,
+        ),
+        (15, 78),
+    )
+
+    cols = {"mark": 15, "action": 40, "score": 455, "bound": 545, "leaves": 775}
+    head_y = 100
+    for key, text in (
+        ("action", "ACTION"),
+        ("score", "VALUE"),
+        ("bound", "ALPHA / BETA" if ai_mode == "alpha-beta" else ""),
+        ("leaves", "KEPT / PRUNED"),
+    ):
+        if text:
+            screen.blit(f_small.render(text, False, BLUE), (cols[key], head_y))
+    pygame.draw.line(screen, DARK, (15, head_y + 18), (W - 15, head_y + 18), 1)
+
+    row_h = 19
+    max_rows = (500 - (head_y + 24)) // row_h
+    leaves_seen = leaves_cut = 0
+    for m in mids:
+        if not m["children"]:
+            leaves_seen += 1
+        for leaf in m["children"]:
+            if leaf["pruned"]:
+                leaves_cut += 1
+            else:
+                leaves_seen += 1
+
+    for index, m in enumerate(mids):
+        if index >= max_rows:
+            screen.blit(
+                f_small.render(f"... {len(mids) - index} more actions", False, DARK),
+                (cols["action"], head_y + 24 + index * row_h),
+            )
+            break
+        y = head_y + 24 + index * row_h
+        chosen = m["on_path"]
+        color = GREEN if chosen else (GREY if m["pruned"] else "black")
+        screen.blit(f_small.render(">" if chosen else " ", False, color), (cols["mark"], y))
+        screen.blit(
+            f_small.render(_fit(m["label"], f_small, cols["score"] - cols["action"] - 12), False, color),
+            (cols["action"], y),
+        )
+        screen.blit(f_small.render(_fmt_score(m["value"]), False, color), (cols["score"], y))
+        if ai_mode == "alpha-beta" and m["alpha"] is not None:
+            bound = f"{_fmt_bound(m['alpha'])} / {_fmt_bound(m['beta'])}"
+            screen.blit(f_small.render(bound, False, color), (cols["bound"], y))
+        kids = m["children"]
+        cut = sum(1 for leaf in kids if leaf["pruned"])
+        screen.blit(
+            f_small.render(f"{len(kids) - cut} / {cut}", False, color), (cols["leaves"], y)
+        )
+
+    _node_footer(screen, f_mid, f_small, ai_mode, root, leaves_seen, leaves_cut)
+
+
 def node_overlay(screen, font):
     if last_search is None:
         screen.blit(
@@ -1250,9 +1424,7 @@ def node_overlay(screen, font):
     BLUE = (20, 90, 170)
 
     # panel semi-transparan menutupi layar battle
-    panel = pygame.Surface((W, H), pygame.SRCALPHA)
-    panel.fill((250, 250, 250, 240))
-    screen.blit(panel, (0, 0))
+    pygame.draw.rect(screen, (250, 250, 250), (0, 0, W, H))
 
     # ---------- header ----------
     mode_text = (
@@ -1271,13 +1443,17 @@ def node_overlay(screen, font):
         (15, 32),
     )
 
+    mids = root["children"]
+    if len(mids) > MAX_TREE_ACTIONS:
+        _node_action_table(screen, root, ai_mode, f_big, f_mid, f_small)
+        return
+
     # --------- priority --------
     screen.blit(f_big.render(f"AI Priority (weights):", False, "black"), (15, 55))
     screen.blit(f_big.render(f"HP: {hp_weight}", False, "black"), (15, 80))
     screen.blit(f_big.render(f"DEF: {def_weight}", False, "black"), (15, 110))
 
     # ---------- layout ----------
-    mids = root["children"]
     total_slots = sum(max(len(m["children"]), 1) for m in mids) or 1
     margin = 30
     slot_w = (W - margin * 2) / total_slots
@@ -1379,37 +1555,12 @@ def node_overlay(screen, font):
             _center_text(screen, f_small, _fmt_score(leaf["value"]), "black", (lx, ly))
             _center_text(screen, f_small, leaf["label"][:3], DARK, (lx, ly + 30))
 
-    # ---------- footer ----------
-    pygame.draw.line(screen, "black", (15, 510), (W - 15, 510), 2)
-    total = leaves_seen + leaves_cut
-    stat = f"LEAVES: {leaves_seen}/{total}"
-    if ai_mode == "alpha-beta":
-        stat += f"   PRUNED: {leaves_cut}"
-    screen.blit(f_mid.render(stat, False, "black"), (15, 520))
-
-    best_label = next((c["label"] for c in mids if c["on_path"]), None)
-    if best_label is not None:
-        screen.blit(
-            f_mid.render(
-                f"BEST: {best_label} ({_fmt_score(root['value'])})", False, GREEN
-            ),
-            (15, 545),
-        )
-    screen.blit(
-        f_small.render(
-            "GREEN: CHOSEN, DASHED/FADED: PRUNED; NPC A MAXIMIZES, NPC B MINIMIZES",
-            False,
-            DARK,
-        ),
-        (15, 575),
-    )
+    _node_footer(screen, f_mid, f_small, ai_mode, root, leaves_seen, leaves_cut)
 
 
 def draw_kb_overlay(screen, font):
     width, height = screen.get_size()
-    panel = pygame.Surface((width, height), pygame.SRCALPHA)
-    panel.fill((248, 250, 255, 242))
-    screen.blit(panel, (0, 0))
+    pygame.draw.rect(screen, (248, 250, 255), (0, 0, width, height))
     title_font = _node_font(17)
     detail_font = _node_font(12)
     muted = (75, 85, 100)
@@ -1418,17 +1569,29 @@ def draw_kb_overlay(screen, font):
     blue = (25, 80, 155)
     red = (165, 35, 35)
 
+    left_x, left_w = 16, 440
+    right_x = 480
+    right_w = width - right_x - 16
+    full_w = width - 32
+    row_h = 17
+
     screen.blit(
         title_font.render("BATTLE KNOWLEDGE BASE / INFERENCE TRACE", False, "black"),
         (16, 8),
     )
     screen.blit(
         detail_font.render(
-            "[I] CLOSE   UP/DOWN: STEP THROUGH RULE EVALUATIONS",
+            "[I] CLOSE   UP/DOWN: STEP THROUGH RULE EVALUATIONS", False, muted
+        ),
+        (16, 30),
+    )
+    screen.blit(
+        detail_font.render(
+            "[OK] ENTAILED   [NO] CONTRADICTED   [??] UNKNOWN   A0 = NPC_A SLOT 0",
             False,
             muted,
         ),
-        (16, 34),
+        (16, 46),
     )
     if not battle_started or inference_result is None:
         screen.blit(
@@ -1443,50 +1606,55 @@ def draw_kb_overlay(screen, font):
     active_b = npc_b_trainer.active
     screen.blit(
         detail_font.render(
-            f"NPC_A ({active_a.name if active_a else 'DEFEATED'}) "
-            f"<Opponent> NPC_B ({active_b.name if active_b else 'DEFEATED'})",
+            _fit(
+                f"NPC_A ({active_a.name if active_a else 'DEFEATED'}) "
+                f"<Opponent> NPC_B ({active_b.name if active_b else 'DEFEATED'})",
+                detail_font,
+                full_w,
+            ),
             False,
             blue,
         ),
-        (16, 62),
+        (16, 64),
     )
     scheduled = "Battle ended" if battle_over else f"{current_agent} scheduled"
     screen.blit(
         detail_font.render(
-            f"Turn {turn_count if battle_over else turn_count + 1} | "
-            f"{scheduled} | Waiting for SPACE: "
-            f"{'no' if battle_over else 'yes'}",
+            _fit(
+                f"Turn {turn_count if battle_over else turn_count + 1} | "
+                f"{scheduled} | Waiting for SPACE: "
+                f"{'no' if battle_over else 'yes'}",
+                detail_font,
+                full_w,
+            ),
             False,
             muted,
         ),
         (16, 82),
     )
 
-    screen.blit(title_font.render("FACTS LOADED", False, blue), (16, 112))
-    facts = list(inference_result.initial_facts)
-    left_facts = facts[: (len(facts) + 1) // 2]
-    right_facts = facts[(len(facts) + 1) // 2 :]
-    for column, column_facts in enumerate((left_facts, right_facts)):
-        x = 16 + column * 450
-        y = 138
-        for fact in column_facts:
-            if y > 320:
-                screen.blit(
-                    detail_font.render(
-                        f"... {len(column_facts) - column_facts.index(fact)} more",
-                        False,
-                        muted,
-                    ),
-                    (x, y),
-                )
-                break
-            screen.blit(detail_font.render(str(fact), False, "black"), (x, y))
-            y += 18
+    # ---------------- left column: facts loaded ----------------
+    screen.blit(title_font.render("FACTS LOADED", False, blue), (left_x, 104))
+    facts = [_fmt_fact(fact) for fact in inference_result.initial_facts]
+    max_fact_rows = 12
+    shown = facts if len(facts) <= max_fact_rows else facts[: max_fact_rows - 1]
+    y = 128
+    for text in shown:
+        screen.blit(
+            detail_font.render(_fit(text, detail_font, left_w), False, "black"),
+            (left_x, y),
+        )
+        y += row_h
+    if len(facts) > len(shown):
+        screen.blit(
+            detail_font.render(f"... {len(facts) - len(shown)} more", False, muted),
+            (left_x, y),
+        )
 
+    # ---------------- right column: rule evaluation ----------------
+    screen.blit(title_font.render("RULE EVALUATION", False, blue), (right_x, 104))
     trace = inference_result.evaluations
-    # screen.blit(title_font.render("RULE EVALUATION", False, blue), (500, 112))
-    # if trace:
-    if trace and False:
+    if trace:
         index = min(kb_trace_step, len(trace) - 1)
         evaluation = trace[index]
         rule_status = (
@@ -1498,78 +1666,78 @@ def draw_kb_overlay(screen, font):
                     condition["status"] in ("contradicted", "partially contradicted")
                     for condition in evaluation["conditions"]
                 )
-                else "UNKNOWN / NOT ENTAILED"
+                else "UNKNOWN"
             )
+        )
+        status_color = (
+            green
+            if evaluation["matched"]
+            else red
+            if rule_status == "CONTRADICTED"
+            else orange
         )
         screen.blit(
             detail_font.render(
-                f"Step {index + 1}/{len(trace)} | Iteration {evaluation['iteration']} | "
-                f"{evaluation['rule_id']} | {rule_status}",
-                False,
-                (
-                    green
-                    if evaluation["matched"]
-                    else red
-                    if rule_status == "CONTRADICTED"
-                    else orange
+                _fit(
+                    f"Step {index + 1}/{len(trace)} | Iter {evaluation['iteration']} | "
+                    f"{evaluation['rule_id']} | {rule_status}",
+                    detail_font,
+                    right_w,
                 ),
+                False,
+                status_color,
             ),
-            (500, 138),
+            (right_x, 128),
         )
-        y = 160
-        for line in (evaluation["description"],):
-            screen.blit(detail_font.render(line[:54], False, muted), (500, y))
-            y += 18
-        for condition in evaluation["conditions"]:
-            state = condition["status"].upper()
-            color = (
-                green
-                if condition["status"] == "entailed"
-                else red
-                if "contradicted" in condition["status"]
-                else orange
-            )
-            screen.blit(
-                detail_font.render(f"{condition['condition']} : {state}", False, color),
-                (500, y),
-            )
-            y += 18
-            if condition["matches"]:
-                screen.blit(
-                    detail_font.render(
-                        f"  facts: {', '.join(condition['matches'])[:62]}",
-                        False,
-                        muted,
-                    ),
-                    (500, y),
-                )
-                y += 18
-            elif condition["contradictions"]:
-                screen.blit(
-                    detail_font.render(
-                        f"  contradictory fact: {condition['contradictions'][0]}",
-                        False,
-                        red,
-                    ),
-                    (500, y),
-                )
-                y += 18
+        screen.blit(
+            detail_font.render(
+                _fit(evaluation["description"], detail_font, right_w), False, muted
+            ),
+            (right_x, 145),
+        )
         if evaluation["substitutions"]:
-            substitution = evaluation["substitutions"][0]
-            screen.blit(
-                detail_font.render(f"Substitution: {substitution}", False, muted),
-                (500, min(y, 286)),
+            first = ", ".join(
+                f"{name.lstrip('?')}={value}"
+                for name, value in evaluation["substitutions"][0]
             )
-    # else:
-    # screen.blit(
-    #     detail_font.render("No rules are configured.", False, orange),
-    #     (500, 140),
-    # )
+            extra = len(evaluation["substitutions"]) - 1
+            suffix = f"  (+{extra} more)" if extra else ""
+            subst_text = _short(f"Subst: {first}") + suffix
+        else:
+            subst_text = "Subst: none"
+        screen.blit(
+            detail_font.render(_fit(subst_text, detail_font, right_w), False, blue),
+            (right_x, 162),
+        )
+        y = 182
+        for condition in evaluation["conditions"][:9]:
+            marker, color = (
+                ("[OK]", green)
+                if condition["status"] == "entailed"
+                else ("[NO]", red)
+                if "contradicted" in condition["status"]
+                else ("[??]", orange)
+            )
+            screen.blit(
+                detail_font.render(
+                    _fit(f"{marker} {_short(condition['condition'])}", detail_font, right_w),
+                    False,
+                    color,
+                ),
+                (right_x, y),
+            )
+            y += row_h
+    else:
+        screen.blit(
+            detail_font.render("No rules are configured.", False, orange),
+            (right_x, 128),
+        )
 
+    # ---------------- inferred facts ----------------
     screen.blit(
-        title_font.render("INFERRED FACTS / ACTION INTENTS", False, green), (16, 355)
+        title_font.render("INFERRED FACTS / ACTION INTENTS", False, green), (16, 350)
     )
-    y = 380
+    y = 374
     derived = inference_result.derivations
     if not derived:
         screen.blit(
@@ -1579,20 +1747,23 @@ def draw_kb_overlay(screen, font):
             (16, y),
         )
     else:
-        for derivation in derived[:6]:
+        for derivation in derived[:4]:
             screen.blit(
                 detail_font.render(
-                    f"{derivation.rule_id} {dict(derivation.substitution)} "
-                    f"=> {derivation.conclusion}",
+                    _fit(
+                        f"{derivation.rule_id} => {_short(derivation.conclusion)}",
+                        detail_font,
+                        full_w,
+                    ),
                     False,
                     green,
                 ),
                 (16, y),
             )
-            y += 18
-        if len(derived) > 6:
+            y += row_h
+        if len(derived) > 4:
             screen.blit(
-                detail_font.render(f"... and {len(derived) - 6} more", False, muted),
+                detail_font.render(f"... and {len(derived) - 4} more", False, muted),
                 (16, y),
             )
 
@@ -1611,37 +1782,46 @@ def draw_kb_overlay(screen, font):
             ", ".join(str(fact) for fact in action_intents)
             or "No action intent is entailed."
         )
-    screen.blit(
-        detail_font.render(f"Final conclusion: {final[:100]}", False, blue),
-        (16, 510),
+    y = _draw_lines(
+        screen,
+        detail_font,
+        _wrap_words(f"Final conclusion: {_short(final)}", detail_font, full_w, 2),
+        blue,
+        16,
+        476,
+        row_h,
     )
-    screen.blit(
-        detail_font.render(f"Result: {last_interaction[:105]}", False, "black"),
-        (16, 532),
+    y = _draw_lines(
+        screen,
+        detail_font,
+        _wrap_words(f"Result: {_short(last_interaction)}", detail_font, full_w, 2),
+        "black",
+        16,
+        max(y + 6, 516),
+        row_h,
     )
     winner = f"Winner: {battle_winner}" if battle_over else "Winner: undecided"
-    screen.blit(detail_font.render(winner, False, blue), (16, 554))
+    screen.blit(detail_font.render(winner, False, blue), (16, 566))
 
 
 def draw_planning_overlay(screen, font):
     width, height = screen.get_size()
-    panel = pygame.Surface((width, height), pygame.SRCALPHA)
-    panel.fill((248, 250, 255, 246))
-    screen.blit(panel, (0, 0))
+    pygame.draw.rect(screen, (248, 250, 255), (0, 0, width, height))
     title_font = _node_font(19)
     detail_font = _node_font(14)
+    small = _node_font(12)
     muted = (75, 85, 100)
     blue = (25, 80, 155)
     green = (0, 125, 45)
     orange = (175, 95, 0)
+    full_w = width - 32
 
     screen.blit(
-        title_font.render("AUTOMATED BATTLE PLANNING", False, "black"),
-        (16, 8),
+        title_font.render("AUTOMATED BATTLE PLANNING", False, "black"), (16, 8)
     )
     screen.blit(
         detail_font.render(
-            "[P] CLOSE   UP/DOWN: SELECT A PLAN STEP",
+            "[P] CLOSE   UP/DOWN: SELECT A PLAN STEP   A0 = NPC_A SLOT 0",
             False,
             muted,
         ),
@@ -1659,16 +1839,19 @@ def draw_planning_overlay(screen, font):
             (16, 75),
         )
         return
+    goal_object = f" ({_short(decision.goal_object)})" if decision.goal_object else ""
     screen.blit(
         detail_font.render(
-            f"ACTOR: {decision.actor} | GOAL: "
-            f"{decision.goal or 'none'}"
-            f"{f' ({decision.goal_object})' if decision.goal_object else ''} | "
-            f"KB RULE: {decision.rule_id or 'none'}",
+            _fit(
+                f"ACTOR: {decision.actor} | GOAL: {decision.goal or 'none'}"
+                f"{goal_object} | KB RULE: {decision.rule_id or 'none'}",
+                detail_font,
+                full_w,
+            ),
             False,
             blue,
         ),
-        (16, 62),
+        (16, 60),
     )
     plan_result = decision.result
     if plan_result is None:
@@ -1678,45 +1861,39 @@ def draw_planning_overlay(screen, font):
                 False,
                 orange,
             ),
-            (16, 92),
+            (16, 90),
         )
         return
 
     status_color = green if plan_result.status == "plan" else orange
     screen.blit(
         detail_font.render(
-            f"STATUS: {plan_result.status} | METHOD: {plan_result.method} | "
-            f"PLAN LENGTH: {len(plan_result.steps)} | COST: "
-            f"{plan_result.total_cost:g}",
+            _fit(
+                f"STATUS: {plan_result.status} | METHOD: {plan_result.method} | "
+                f"PLAN LENGTH: {len(plan_result.steps)} | COST: "
+                f"{plan_result.total_cost:g}",
+                detail_font,
+                full_w,
+            ),
             False,
             status_color,
         ),
-        (16, 88),
+        (16, 84),
     )
 
-    screen.blit(
-        detail_font.render(
-            "STEP   ACTION                         PRECONDITIONS",
-            False,
-            blue,
-        ),
-        (16, 124),
-    )
+    screen.blit(detail_font.render("STEP  ACTION", False, blue), (16, 114))
     selected_index = min(planning_trace_step, max(len(plan_result.steps) - 1, 0))
     visible_steps = plan_result.steps[:9]
     for index, step in enumerate(visible_steps):
         selected = index == selected_index
         prefix = ">" if selected else " "
-        color = green if selected else "black"
-        action_text = str(step.action)
-        preconditions = ", ".join(str(fact) for fact in step.preconditions)
         screen.blit(
             detail_font.render(
-                f"{prefix}{index + 1:02}   {action_text[:29]:29} {preconditions[:60]}",
+                _fit(f"{prefix}{index + 1:02}   {_short(step.action)}", detail_font, full_w),
                 False,
-                color,
+                green if selected else "black",
             ),
-            (16, 148 + index * 20),
+            (16, 138 + index * 19),
         )
     if len(plan_result.steps) > len(visible_steps):
         screen.blit(
@@ -1725,23 +1902,37 @@ def draw_planning_overlay(screen, font):
                 False,
                 muted,
             ),
-            (16, 148 + len(visible_steps) * 20),
+            (16, 138 + len(visible_steps) * 19),
         )
 
     if plan_result.steps:
         selected_step = plan_result.steps[selected_index]
+        screen.blit(
+            detail_font.render(
+                f"PRECONDITIONS OF STEP {selected_index + 1}", False, blue
+            ),
+            (16, 336),
+        )
+        _draw_lines(
+            screen,
+            small,
+            _wrap_items(
+                [_fmt_fact(fact) for fact in selected_step.preconditions],
+                small,
+                full_w,
+                3,
+            ),
+            "black",
+            16,
+            356,
+            16,
+        )
         state_facts = sorted(
             (
                 fact
                 for fact in selected_step.state
                 if fact[0]
-                in (
-                    "hp",
-                    "hp-value",
-                    "defense-value",
-                    "shielded",
-                    "unshielded",
-                )
+                in ("hp", "hp-value", "defense-value", "shielded", "unshielded")
                 or (
                     fact[0] == "pp-value"
                     and fact[1] == selected_step.action.arguments[0]
@@ -1749,21 +1940,21 @@ def draw_planning_overlay(screen, font):
             ),
             key=lambda fact: tuple(str(part) for part in fact),
         )
-        state_summary = ", ".join(str(fact) for fact in state_facts)
-        detail_y = 350
         screen.blit(
             detail_font.render(
-                f"RESULT(s, a) AFTER STEP {selected_index + 1}: {state_summary[:110]}",
-                False,
-                blue,
+                f"RESULT(s, a) AFTER STEP {selected_index + 1}", False, blue
             ),
-            (16, detail_y),
+            (16, 412),
         )
-        if len(state_summary) > 110:
-            screen.blit(
-                detail_font.render(state_summary[110:220], False, blue),
-                (16, detail_y + 20),
-            )
+        _draw_lines(
+            screen,
+            small,
+            _wrap_items([_fmt_fact(fact) for fact in state_facts], small, full_w, 3),
+            "black",
+            16,
+            432,
+            16,
+        )
 
     stats = plan_result.stats
     heuristic_text = (
@@ -1771,24 +1962,32 @@ def draw_planning_overlay(screen, font):
         if plan_result.initial_heuristic == inf
         else f"{plan_result.initial_heuristic:g}"
     )
-    stats_text = (
-        f"EXPANDED: {stats['expanded']} | GENERATED: {stats['generated']} | "
-        f"h(initial): {heuristic_text} | "
-        f"SEARCHED STATES: {stats['states']} | "
-        f"ELAPSED: {stats['elapsed_ms']:.2f} ms"
+    screen.blit(
+        detail_font.render(
+            f"EXPANDED: {stats['expanded']} | GENERATED: {stats['generated']} | "
+            f"h(initial): {heuristic_text}",
+            False,
+            muted,
+        ),
+        (16, 490),
     )
     screen.blit(
-        detail_font.render(stats_text[:122], False, muted),
-        (16, 410),
+        detail_font.render(
+            f"SEARCHED STATES: {stats['states']} | "
+            f"ELAPSED: {stats['elapsed_ms']:.2f} ms",
+            False,
+            muted,
+        ),
+        (16, 510),
     )
     if plan_result.reason:
         screen.blit(
             detail_font.render(
-                f"REASON: {plan_result.reason[:120]}",
+                _fit(f"REASON: {plan_result.reason}", detail_font, full_w),
                 False,
                 orange,
             ),
-            (16, 438),
+            (16, 534),
         )
     if last_search and last_search.get("plan_followed"):
         outcome = "Plan's first step followed by adversarial search."
@@ -1806,7 +2005,12 @@ def draw_planning_overlay(screen, font):
     else:
         outcome = "Planning result has not been applied to a battle turn."
         outcome_color = muted
-    screen.blit(
-        detail_font.render(outcome[:120], False, outcome_color),
-        (16, 466),
+    _draw_lines(
+        screen,
+        detail_font,
+        _wrap_words(outcome, detail_font, full_w, 2),
+        outcome_color,
+        16,
+        556,
+        18,
     )

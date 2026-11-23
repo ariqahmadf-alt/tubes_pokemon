@@ -442,10 +442,13 @@ def draw_debug_overlay(screen):
         panel.y + 99,
         green,
     )
-    label(
+    stats_text = (
         f"Candidates: {debug_run['candidate_count']}    Tested swaps: "
-        f"{debug_run['total_evaluated']}",
-        left + 365,
+        f"{debug_run['total_evaluated']}"
+    )
+    label(
+        stats_text,
+        right - small.size(stats_text)[0],
         panel.y + 101,
         muted,
         small,
@@ -477,7 +480,7 @@ def draw_debug_overlay(screen):
     )
 
     label(
-        "Singleton expected utility (not additive):",
+        "Singleton EU (not additive):",
         left,
         panel.y + 242,
         muted,
@@ -499,11 +502,11 @@ def draw_debug_overlay(screen):
             panel.y + 269 + i * 28,
             white,
             font,
-            290,
+            230,
         )
         label(
             f"{contribution:+.2f}",
-            left + 345,
+            left + 250,
             panel.y + 269 + i * 28,
             (
                 green
@@ -514,34 +517,22 @@ def draw_debug_overlay(screen):
 
     detail_y = panel.y + 437
     if step["winning_swap"] is None:
-        label(
-            "No improvement\nSearch stopped!",
-            left,
-            detail_y,
-            gold,
-            small,
-            999,
-        )
+        label("No improvement", left, detail_y, gold, small)
+        label("Search stopped!", left, detail_y + 24, gold, small)
     else:
         slot, old, new = step["winning_swap"]
-        label(
-            f"Chosen: slot {slot + 1}, {old} -> {new}",
-            left,
-            detail_y,
-            green,
-            small,
-            410,
-        )
+        label(f"Chosen: slot {slot + 1}", left, detail_y, green, small)
+        label(f"{old} -> {new}", left, detail_y + 24, green, small, 340)
         label(
             f"Expected-utility gain: "
             f"{step['best_score'] - step['score']:+.2f}",
             left,
-            detail_y + 24,
+            detail_y + 48,
             green,
             small,
         )
 
-    chart_x = left + 440
+    chart_x = left + 360
     label("SCORE PROGRESSION", chart_x, panel.y + 242, muted, small)
     chart = pygame.Rect(chart_x + 8, panel.y + 280, max(100, right - chart_x - 22), 102)
     # pygame.draw.rect(screen, (23, 35, 51), chart, border_radius=4)
@@ -565,7 +556,8 @@ def draw_debug_overlay(screen):
             5 if i == debug_step_index else 3,
         )
     label(f"min {lo:+.2f}", chart.x + 8, chart.bottom + 3, muted, small)
-    label(f"max {hi:+.2f}", chart.right - 77, chart.bottom + 3, muted, small)
+    max_text = f"max {hi:+.2f}"
+    label(max_text, chart.right - small.size(max_text)[0], chart.bottom + 3, muted, small)
 
     label(
         f"TOP TESTED SWAPS ({step['evaluated']} evaluated)",
@@ -589,6 +581,21 @@ def draw_debug_overlay(screen):
         label(
             "No valid replacement candidates.", chart_x + 6, panel.y + 446, muted, small
         )
+
+
+def _wrap_text(text, face, max_width):
+    """Word-wrap text so every line fits max_width pixels."""
+    lines, current = [], ""
+    for word in str(text).split(" "):
+        trial = f"{current} {word}".strip()
+        if current and face.size(trial)[0] > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    return lines
 
 
 def draw_uncertainty_overlay(screen):
@@ -706,18 +713,19 @@ def draw_uncertainty_overlay(screen):
     )
 
     evaluation = candidate_evaluation
+    col_p, col_margin, col_utility, col_pu = 320, 490, 610, 730
     label("Outcome scenario", left, panel.y + 246, muted, small)
-    label("P(outcome)", left + 390, panel.y + 246, muted, small)
-    label("Margin", left + 510, panel.y + 246, muted, small)
-    label("Utility", left + 620, panel.y + 246, muted, small)
-    label("P x U", left + 735, panel.y + 246, muted, small)
+    label("P(outcome)", left + col_p, panel.y + 246, muted, small)
+    label("Margin", left + col_margin, panel.y + 246, muted, small)
+    label("Utility", left + col_utility, panel.y + 246, muted, small)
+    label("P x U", left + col_pu, panel.y + 246, muted, small)
     for index, scenario in enumerate(evaluation.scenarios):
         y = panel.y + 274 + index * 29
-        label(scenario.name, left, y, black, small, 365)
-        label(f"{scenario.probability:.3f}", left + 390, y, black, small)
-        label(f"{scenario.matchup_margin:+d}", left + 510, y, black, small)
-        label(f"{scenario.utility:+.2f}", left + 620, y, black, small)
-        label(f"{scenario.contribution:+.2f}", left + 735, y, black, small)
+        label(scenario.name, left, y, black, small, col_p - 15)
+        label(f"{scenario.probability:.3f}", left + col_p, y, black, small)
+        label(f"{scenario.matchup_margin:+d}", left + col_margin, y, black, small)
+        label(f"{scenario.utility:+.2f}", left + col_utility, y, black, small)
+        label(f"{scenario.contribution:+.2f}", left + col_pu, y, black, small)
 
     normalized = "yes" if evaluation.probabilities_normalized else "NO"
     probability_total = sum(
@@ -739,23 +747,15 @@ def draw_uncertainty_overlay(screen):
         small,
         panel.width - 52,
     )
-    label(
+    note_y = panel.y + 440
+    for note in (
         f"Scenario prior: {uncertainty.PROBABILITY_SOURCE}",
-        left,
-        panel.y + 440,
-        muted,
-        small,
-        panel.width - 52,
-    )
-    label(
         "Utility = -abs(type-matchup margin): zero is balanced; extreme "
         "advantages or disadvantages reduce utility.",
-        left,
-        panel.y + 465,
-        muted,
-        small,
-        panel.width - 52,
-    )
+    ):
+        for line in _wrap_text(note, small, panel.width - 52):
+            label(line, left, note_y, muted, small)
+            note_y += 20
 
 
 def move_csp_debug_step(amount):
